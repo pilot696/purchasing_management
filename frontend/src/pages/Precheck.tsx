@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { getDemoRole, getRunSnapshot, resumeRun, startRun } from "../lib/api";
@@ -31,6 +31,7 @@ export default function Precheck() {
   const [runId, setRunId] = useState<string | null>(() => searchParams.get("run"));
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [patchSelections, setPatchSelections] = useState<Record<number, PatchSelection>>({});
+  const initializedRun = useRef<string | null>(null);
 
   const role = getDemoRole();
   const run = useRunStream(runId);
@@ -49,8 +50,12 @@ export default function Precheck() {
   }, [review?.report, snapshot.data?.artifact]);
 
   useEffect(() => {
-    if (report) setPatchSelections(initialPatchSelections(report.patches));
-  }, [report]);
+    // 只在“新 run 首次拿到报告”时初始化，避免 SSE 每次事件重建 report 冲掉用户勾选/改值
+    if (report && runId && initializedRun.current !== runId) {
+      initializedRun.current = runId;
+      setPatchSelections(initialPatchSelections(report.patches));
+    }
+  }, [report, runId]);
 
   const selectedEdits = report ? buildSelectedEdits(report.patches, patchSelections) : [];
 

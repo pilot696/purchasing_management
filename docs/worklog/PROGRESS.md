@@ -316,3 +316,14 @@
 
 <!-- 追加位置：新记录写在本行上方 -->
 
+
+### [2026-10-23 21:35] W4 收尾：HITL edits、供应商看板、上传、CI/依赖锁定（多发票未完成）
+- **变更文件**：ackend/app/agents/precheck.py、ackend/app/services/runs.py、ackend/app/schemas/{runs,catalog}.py、ackend/app/api/v1/{runs,suppliers,observability,documents}.py、ackend/alembic/env.py、 002_invoice_remark.py、rontend/src/pages/{Precheck,Supplier,Matching}.tsx、rontend/src/lib/{m1,api}.ts、.github/workflows/ci.yml、scripts/eval_report.py、ackend/requirements.txt
+- **已完成**：
+  1. HITL edits 贯通：ResumeRequest.edits=None 兼容全量采纳；[] 表示不采纳；非空按 reviewer 勾选/改值应用；precheck 清洗路径/越界/整 spec 替换，审计只记录实际应用集合；M1 前端逐条勾选+改值。
+  2. 供应商目录/详情/趋势：GET /suppliers、GET /suppliers/{code}；页面表格点选 + 最近 6 次评估趋势；GET /reviews/{id}；GET /metrics/overview 别名。
+  3. 文件上传：POST /documents/upload 裸 PDF body，sha256 去重、20MB 限制、可选 linked_no 关联 invoice/po；M3 页面上传卡片。
+  4. 工程化：CI（后端离线单测 + 前端 typecheck/test/build）、requirements 15 项精确锁定、eval_report 聚合脚本、根目录清理。
+- **验证结果**：后端 **118 passed / 0 failed / 6 skipped**（VM DB）；前端 **43 passed + typecheck/build OK**；e2e SMOKE_M1/M2/M3=OK（VM DB，FakeLLM）；上传去重/关联集成测试通过。
+- **未完成**：M3 多发票分批核销（仍取 invoice_nos[0]，前端单发票输入）；上传文档仅入库+抽取，未自动创建发票/PO 业务记录并接入 M3；幂等/限流未实现；M2 评测总分均值分母问题未修。
+- **下一步 (Next)**：多发票状态机 + 上传建档联动；然后真实模型全量 eval（需 VLM/embedding provider 与少量费用）。

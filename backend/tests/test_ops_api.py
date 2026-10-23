@@ -133,3 +133,41 @@ async def test_review_detail_matches_inbox_shape() -> None:
         assert {"id", "run_id", "kind", "status", "run_module", "payload", "verdict"} <= set(body)
         missing = await client.get("/api/v1/reviews/00000000-0000-0000-0000-000000000000")
         assert missing.status_code == 404
+
+
+async def test_document_upload_dedupes_and_links() -> None:
+    await _require_data()
+    import uuid as _uuid
+
+    pdf = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n" + str(_uuid.uuid4()).encode()
+    async with _client() as client:
+        first = await client.post(
+            "/api/v1/documents/upload",
+            params={"doc_type": "invoice", "linked_no": "INV-2026-3000"},
+            content=pdf,
+            headers={"Content-Type": "application/pdf"},
+        )
+        assert first.status_code == 201, first.text
+        body = first.json()
+        assert body["duplicate"] is False
+        assert body["doc_type"] == "invoice"
+        assert body["linked_kind"] == "invoice"
+
+        second = await client.post(
+            "/api/v1/documents/upload",
+            params={"doc_type": "invoice"},
+            content=pdf,
+            headers={"Content-Type": "application/pdf"},
+        )
+        assert second.status_code == 201, second.text
+        assert second.json()["duplicate"] is True
+        assert second.json()["id"] == body["id"]
+
+        bad = await client.post(
+            "/api/v1/documents/upload",
+            params={"doc_type": "invoice"},
+            content=b"not a pdf",
+            headers={"Content-Type": "application/pdf"},
+        )
+        assert bad.status_code == 400
+

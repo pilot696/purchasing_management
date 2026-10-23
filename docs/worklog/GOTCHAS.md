@@ -389,3 +389,21 @@
 - **防回归**：用全新 VM 库实测 `upgrade head` → 43 表 + `vector`/`pg_trgm` + seed 计数正确；随后三套 e2e smoke 全绿。
 
 <!-- 追加位置：新踩坑写在本行上方 -->
+
+## G-047｜“无 DB 降级”测试在本机配置 VM DB 后误报
+- **问题现象**：全量 pytest 里 `test_healthz_reports_degraded_without_db` 等 3 条失败（202/健康检查 db=true）。
+- **根因定位**：用例默认本机 localhost 无 DB；现在 `backend/.env` 指向 VM（可达），app 单例 engine 已连上。
+- **修复手段**：测试内 `_require_db_down()` 探测 DATABASE_URL host:port，可达则 `pytest.skip`；CI 无 DB 时照常执行降级断言。
+- **防回归**：`pytest tests/test_api_smoke.py` 在 VM DB 环境显示 skipped 而非 failed。
+
+## G-048｜M1 补丁勾选被 SSE 事件重置
+- **问题现象**：复核等待期间 SSE 每次事件触发 report 引用变化，`useEffect([report])` 重跑，用户勾选/改值被重置。
+- **根因定位**：初始化 effect 依赖 report 对象身份；流式更新会重建 report。
+- **修复手段**：用 `useRef` 记录已初始化的 runId，只在“新 run 首次拿到报告”时初始化 selections。
+- **防回归**：前端 typecheck/build + 手工复核流程；后续可加 Playwright 交互用例。
+
+## G-049｜上传集成测试跨次运行命中 sha256 去重
+- **问题现象**：第二次跑 `test_document_upload_dedupes_and_links` 时首个断言 `duplicate is False` 失败（上一轮留下的同内容 doc）。
+- **根因定位**：测试 PDF 内容固定，doc.sha256 全局唯一。
+- **修复手段**：测试 PDF 尾部拼随机 uuid，保证每次运行首个上传唯一，同时仍能在用例内验证第二次去重。
+- **防回归**：该集成测试可重复执行。

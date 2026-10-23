@@ -1,4 +1,4 @@
-﻿import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -10,6 +10,7 @@ import {
   getRunSnapshot,
   resumeRun,
   startRun,
+  uploadDocument,
 } from "../lib/api";
 import type { DocumentAnnotation } from "../lib/api";
 import { isTerminal } from "../lib/events";
@@ -44,6 +45,10 @@ export default function Matching() {
   const [drawer, setDrawer] = useState<DrawerState | null>(null);
   const [annotations, setAnnotations] = useState<DocumentAnnotation[]>([]);
   const [drawerLoading, setDrawerLoading] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadDocType, setUploadDocType] = useState("invoice");
+  const [uploadLinkedNo, setUploadLinkedNo] = useState("");
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
 
   const role = getDemoRole();
   const run = useRunStream(runId);
@@ -85,8 +90,22 @@ export default function Matching() {
     onSuccess: () => setDecisionError(null),
   });
 
-  const openDrawer = async (docId: string, title: string) => {
-    setDrawer({ docId, title });
+  const upload = useMutation({
+    mutationFn: () => {
+      if (!uploadFile) throw new Error("请选择 PDF 文件");
+      return uploadDocument(uploadFile, uploadDocType, uploadLinkedNo.trim() || undefined);
+    },
+    onSuccess: (doc) => {
+      setUploadMessage(
+        `${doc.duplicate ? "已存在（sha256 去重）" : "上传成功"}：doc ${doc.id.slice(0, 8)} · ${doc.doc_type}` +
+          (doc.linked_kind ? ` · 已关联 ${doc.linked_kind}` : ""),
+      );
+      setUploadFile(null);
+    },
+    onError: (error) => setUploadMessage(`上传失败：${String(error)}`),
+  });
+
+  const openDrawer = async (docId: string, title: string) => {    setDrawer({ docId, title });
     setDrawerLoading(true);
     setAnnotations([]);
     try {
@@ -121,6 +140,56 @@ export default function Matching() {
           </div>
         )}
       </div>
+
+      <section className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">上传单据 PDF</h2>
+            <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+              裸二进制上传（sha256 去重），可选关联发票号/PO 号；上传后调用抽取接口入库。
+            </p>
+          </div>
+          <label className="flex flex-col gap-1 text-[12px] text-[var(--text-secondary)]">
+            类型
+            <select
+              className="rounded-md border border-[var(--border-default)] px-2 py-1.5 text-[13px]"
+              value={uploadDocType}
+              onChange={(event) => setUploadDocType(event.target.value)}
+            >
+              <option value="invoice">invoice</option>
+              <option value="po">po</option>
+              <option value="contract">contract</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-[12px] text-[var(--text-secondary)]">
+            关联单号（可选）
+            <input
+              className="w-44 rounded-md border border-[var(--border-default)] px-2 py-1.5 text-[13px]"
+              value={uploadLinkedNo}
+              onChange={(event) => setUploadLinkedNo(event.target.value)}
+              placeholder="INV-... / PO-..."
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-[12px] text-[var(--text-secondary)]">
+            PDF 文件
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              className="text-[12px]"
+              onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={upload.isPending || !uploadFile}
+            onClick={() => upload.mutate()}
+            className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {upload.isPending ? "上传中…" : "上传"}
+          </button>
+          {uploadMessage && <span className="text-[11px] text-[var(--text-secondary)]">{uploadMessage}</span>}
+        </div>
+      </section>
 
       <section className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4">
         <div className="flex flex-wrap items-end gap-3">

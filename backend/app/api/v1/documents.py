@@ -1,4 +1,4 @@
-"""文档接口：元数据、bbox 注解、触发抽取并落库（Spec §8.3 子集）。"""
+﻿"""文档接口：元数据、bbox 注解、触发抽取并落库（Spec §8.3 子集）。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 
@@ -137,3 +137,85 @@ async def extract(doc_id: UUID, session: SessionDep) -> dict[str, Any]:
         "summary": summarize(result),
         "result": result.model_dump(mode="json"),
     }
+
+
+@router.post("/documents/upload", status_code=201)
+async def upload_document(
+    request: Request,
+    session: SessionDep,
+    doc_type: str = Query(..., description="invoice|po|contract"),
+    linked_no: str | None = Query(default=None, description="发票号/PO 号/合同号，用于关联业务单据"),
+) -> dict[str, Any]:
+    """上传 PDF 原件（裸二进制 body，Content-Type: application/pdf）。
+
+    - 以 sha256 去重：重复上传返回已有文档并标记 duplicate=true
+    - 可选 linked_no：invoice/po 自动关联到对应业务记录（关联失败不阻塞上传）
+    - 上传后调用 POST /documents/{id}/extract 做抽取
+    """
+    import hashlib
+
+    if doc_type not in {"invoice", "po", "contract"}:
+        raise AppError("不支持的 doc_type", details={"doc_type": doc_type})
+    raw = await request.body()
+    if len(raw) < 8 or not raw.startswith(b"%PDF"):
+        raise AppError("只支持 PDF 文件（缺少 %PDF 头）", details={"bytes": len(raw)})
+    if len(raw) > 20 * 1024 * 1024:
+        raise AppError("PDF 超过 20MB 限制", details={"bytes": len(raw)})
+    sha = hashlib.sha256(raw).hexdigest()
+    existing = await session.scalar(select(t.Doc).where(t.Doc.sha256 == sha))
+    if existing is not None:
+        return {**_doc_meta(existing), "duplicate": True}
+
+    rel = f"data/files/uploads/{sha[:2]}/{sha}.pdf"
+    target = PROJECT_ROOT / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(raw)
+
+    page_count = None
+    try:
+        import pypdfium2 as pdfium
+
+        page_count = len(pdfium.PdfDocument(raw))
+    except Exception:  # noqa: BLE001 - 损坏/加密 PDF 不阻塞入库
+        page_count = None
+
+    linked_kind: str | None = None
+    linked_id: UUID | None = None
+    if linked_no:
+        if doc_type == "invoice":
+            invoice = await session.scalar(select(t.Invoice).where(t.Invoice.invoice_no == linked_no))
+            if invoice is not None:
+                linked_kind, linked_id = "invoice", invoice.id
+        elif doc_type == "po":
+            po = await session.scalar(select(t.Po).where(t.Po.po_no == linked_no))
+            if po is not None:
+                linked_kind, linked_id = "po", po.id
+
+    doc = t.Doc(
+        doc_type=doc_type,
+        file_path=rel,
+        sha256=sha,
+        mime="application/pdf",
+        page_count=page_count,
+        has_text_layer=None,
+        linked_kind=linked_kind,
+        linked_id=linked_id,
+    )
+    session.add(doc)
+    await session.commit()
+    await session.refresh(doc)
+    return {**_doc_meta(doc), "duplicate": False}
+
+
+def _doc_meta(doc: t.Doc) -> dict[str, Any]:
+    return {
+        "id": str(doc.id),
+        "doc_type": doc.doc_type,
+        "sha256": doc.sha256,
+        "page_count": doc.page_count,
+        "linked_kind": doc.linked_kind,
+        "linked_id": str(doc.linked_id) if doc.linked_id else None,
+        "extract_url": f"/api/v1/documents/{doc.id}/extract",
+        "file_url": f"/api/v1/documents/{doc.id}/file",
+    }
+

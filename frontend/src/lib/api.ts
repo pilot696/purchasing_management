@@ -390,3 +390,27 @@ export async function getSupplier(code: string): Promise<SupplierDetail> {
   return (await response.json()) as SupplierDetail;
 }
 
+
+export interface UploadedDoc {
+  id: string;
+  doc_type: string;
+  sha256: string;
+  page_count: number | null;
+  linked_kind: string | null;
+  linked_id: string | null;
+  extract_url: string;
+  file_url: string;
+  duplicate: boolean;
+}
+
+export async function uploadDocument(file: File, docType: string, linkedNo?: string): Promise<UploadedDoc> {
+  const params = new URLSearchParams({ doc_type: docType });
+  if (linkedNo) params.set("linked_no", linkedNo);
+  const response = await fetch(`/api/v1/documents/upload?${params.toString()}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/pdf", "X-Demo-Role": demoRole },
+    body: file,
+  });
+  if (!response.ok) throw await asError(response);
+  return (await response.json()) as UploadedDoc;
+}

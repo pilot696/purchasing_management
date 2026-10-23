@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import os
+import socket
+from urllib.parse import urlparse
+
 import httpx
 import pytest
 
@@ -14,7 +18,19 @@ def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
 
+def _require_db_down() -> None:
+    """这些用例验证“DB 不可用时的降级”；本机若配置了可达 DB 则跳过（CI 无 DB 时照常执行）。"""
+    url = os.getenv("DATABASE_URL") or "postgresql+psycopg://app:app@localhost:5432/procurement"
+    parsed = urlparse(url.replace("postgresql+psycopg", "postgresql"))
+    try:
+        with socket.create_connection((parsed.hostname or "localhost", parsed.port or 5432), timeout=0.5):
+            pytest.skip("当前 DATABASE_URL 指向可达数据库，跳过无 DB 降级用例")
+    except OSError:
+        return
+
+
 async def test_healthz_reports_degraded_without_db() -> None:
+    _require_db_down()
     async with _client() as client:
         resp = await client.get("/healthz")
     assert resp.status_code == 200
@@ -25,6 +41,7 @@ async def test_healthz_reports_degraded_without_db() -> None:
 
 
 async def test_readyz_returns_503_without_db() -> None:
+    _require_db_down()
     async with _client() as client:
         resp = await client.get("/readyz")
     assert resp.status_code == 503
@@ -57,6 +74,7 @@ async def test_meta_enums_expose_event_types() -> None:
 
 
 async def test_start_run_returns_503_when_db_down() -> None:
+    _require_db_down()
     async with _client() as client:
         resp = await client.post("/api/v1/runs", json={"module": "m1", "subject": {"pr_id": "PR-DEMO"}})
     assert resp.status_code == 503
@@ -68,3 +86,4 @@ async def test_demo_role_validation() -> None:
     assert await get_demo_role(None) == "buyer"
     with pytest.raises(RoleForbidden):
         await get_demo_role("hacker")
+
