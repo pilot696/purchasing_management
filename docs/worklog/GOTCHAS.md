@@ -74,4 +74,15 @@
 - **修复手段**：`deps.ensure_app_state()` 做懒初始化（lifespan 与依赖两条路径都安全）；生产行为不变。
 - **防回归**：`backend/tests/test_api_smoke.py`（5 条无 DB 冒烟 + 1 条角色校验）。
 
+## G-008｜GitNexus 的 FTS/BM25 扩展在 Windows 加载失败（不影响 impact/detect-changes）
+- **问题现象**：`npx gitnexus analyze` 报
+  `LOAD fts failed ... libfts.lbug_extension 找不到指定的模块 (Windows error 126)`，提示安装
+  Microsoft Visual C++ 2015-2022 Redistributable (x64) 或把 Git 的 mingw64/bin 加入 PATH。
+- **根因定位**：LadybugDB 的 FTS 扩展依赖 MSVC 运行时 / OpenSSL 3 DLL；本机未装 VC++ 运行时，
+  `LoadLibrary` 返回 126（模块找不到）。仓库索引本身的 AST 解析已用 Tree-sitter（纯 JS/WASM）完成，
+  因此**不影响符号图谱与调用链分析**，只影响全文/BM25 检索加速。
+- **修复手段**：安装 VC++ 2015-2022 x64 运行时（或从 Git Bash 里运行使 mingw64/bin 进入 PATH）后
+  `gitnexus analyze --repair-fts` 重建搜索索引。当前不影响 SOP 要求的 `impact` / `detect_changes`。
+- **防回归**：`doctor.ps1` 不把 FTS 作为判据（判据是 `impact`/`detect-changes` 能否跑通）。
+
 <!-- 追加位置：新踩坑写在本行上方 -->

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from functools import lru_cache
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -60,8 +59,3 @@ async def dispose_engine() -> None:
         await _engine.dispose()
     _engine = None
     _session_factory = None
-
-
-@lru_cache(maxsize=1)
-def _noop() -> None:  # 占位，保持模块导入无副作用
-    return None

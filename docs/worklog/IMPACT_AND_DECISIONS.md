@@ -60,10 +60,23 @@
 - **最终方案**：测试分两层——`unit`（纯函数/FakeLLM/ASGI 冒烟，默认跑）与 `integration`（需 `DATABASE_URL`，默认 `-m 'not integration'` 跳过）。W1 开工前需启动 Docker Desktop 并跑 `make up migrate`。
 - **同步更新 Spec**：附录 A.3 增加测试分层说明。
 
-### ADR-001｜GitNexus 在 P0 尚未可用（偏差登记）
-- **触发原因**：`CLAUDE.md` §1 要求改动前用 GitNexus `impact` 做爆炸半径分析；但仓库当前未 `git init`、`gitnexus` 未安装、无 AST 索引，MCP 工具不可用。
-- **GitNexus impact**：**未执行**（无索引）。以「新增文件清单 + 预留调用点」替代：P0 不修改任何已有源文件（仓库仅有 PyCharm 模板 `main.py`/`pyproject.toml`，未触碰）。
-- **最终方案**：P0 结束提交后执行 `npx gitnexus analyze` 并补 `setup`；W1 起凡触及公共底座（`app/llm/*`、`app/schemas/*`、`app/models/*`）必须先 `impact`。若 `npm install -g gitnexus` 不可用，则退化为「改动前先跑全量 `pytest` + 列出引用点」并在本文件登记。
-- **同步更新 Spec**：无（属工具链偏差）。
+### ADR-010｜GitNexus 索引与提交前风控已接通（P0 收尾）
+- **触发原因**：`CLAUDE.md`/`AGENTS.md` 要求提交前 `detect_changes`、改动前 `impact`。
+- **GitNexus impact**：`gitnexus@1.6.12 analyze` 成功：**1205 symbols / 1870 relationships / 22 execution flows**；
+  生成 `.gitnexus/`（已被 `.git/info/exclude` 忽略）、`AGENTS.md`、`.claude/skills/gitnexus-*`。
+  - `impact "get_engine" --direction upstream` → 上游链 `deps.ensure_app_state → RunService/EventBus`（depth 3），风险 LOW；
+  - `detect-changes --scope all` → `3 files, 5 symbols, affected processes 0, risk low`（README / session.py / claude.md）。
+- **最终方案**：`AGENTS.md` 与 `.claude/` 作为工具链配置入库；`.gitnexus/` 不入库；W1 起每次提交前执行
+  `node .gitnexus/run.cjs detect-changes --scope all --repo .`，改动公共底座前执行 `impact`。
+- **同步更新 Spec**：无（工具链）。
+
+### ADR-001｜GitNexus 在 P0 前半段不可用（已解除）
+- **触发原因**：开工时仓库未 `git init`、无 AST 索引，无法执行 `impact`。
+- **处理过程**：P0 前半段为纯新增文件（未修改任何既有源文件），以「新增文件清单」替代 impact 分析；
+  首次提交 `587de1f` 后执行 `npx --yes gitnexus@latest analyze`（v1.6.12）建立索引，随后补跑
+  `impact` + `detect-changes`，状态由"未执行"变为"已接通"（详见 ADR-010）。
+- **遗留**：GitNexus 的 **FTS/BM25 检索不可用**（Windows 缺 VC++ 运行时导致 `libfts.lbug_extension` 加载失败），
+  不影响 `impact` / `detect-changes` / 图查询，登记在 GOTCHAS G-008。
+- **同步更新 Spec**：无。
 
 <!-- 追加位置：新 ADR 写在本行上方 -->

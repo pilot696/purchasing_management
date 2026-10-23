@@ -16,6 +16,16 @@
 
 ## 留痕记录（倒序追加，最新在上）
 
+### [2026-10-23 11:57] W0: GitNexus 索引 + 提交前风控（P0 收尾）
+- **变更文件**：`AGENTS.md`、`.claude/skills/gitnexus-*`、`claude.md`（GitNexus 自动写入的规范块）、`README.md`（测试数字修正）、`backend/app/db/session.py`（删除占位函数）、`docs/worklog/*`
+- **GitNexus 影响面**：
+  - `analyze`（v1.6.12）成功：**1205 symbols / 1870 relationships / 22 execution flows**；`.gitnexus/`（17MB）已在 `.git/info/exclude` 中忽略，不入库
+  - `impact "get_engine" --direction upstream`：上游链 `deps.ensure_app_state → RunService/EventBus`（depth 3），**risk LOW**
+  - `detect-changes --scope all`：`3 files, 5 symbols, affected processes 0, risk low`
+  - FTS/BM25 检索不可用（Windows 缺 VC++ 运行时，见 GOTCHAS G-008），不影响 impact/detect-changes
+- **验证结果**：后端 **26 passed / 3 skipped**（0.43s）；前端 **18 passed**；`tsc --noEmit` 0；`vite build` 通过；提交 `587de1f` 后工作树干净（本条目对应的二次提交随后产生）
+- **下一步 (Next)**：W1-M3 第 1 步——数据工厂 master data + ReportLab 发票/PO/合同模板 + 扫描件退化 + gold（对应 Spec §10.1~§10.4）
+
 ### [2026-10-23 11:54] W0: 运行时冒烟与环境结论
 - **变更文件**：无（验证动作）；`README.md`、`scripts/dev.ps1`、`scripts/doctor.ps1`、`docker-compose.yml`、`backend/Dockerfile`、`Makefile`、`.gitignore`
 - **执行**：`.venv\Scripts\python -m uvicorn app.main:app --port 8011` → 用 `Invoke-WebRequest` 验证 5 个端点
