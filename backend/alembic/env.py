@@ -12,6 +12,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import create_engine, pool
 
+from app.core.config import get_settings
 from app.db.base import Base
 from app.models import tables  # noqa: F401  # 必须 import 才能注册 metadata
 
@@ -19,7 +20,10 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-database_url = os.getenv("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
+# 优先级：显式环境变量 > .env（Settings）> alembic.ini。
+# 历史坑：这里原来只读 os.getenv，导致 `alembic upgrade head` 不认 .env，
+# 切数据库时会静默迁移到 alembic.ini 里的旧库（VM 库始终为空）。
+database_url = os.getenv("DATABASE_URL") or get_settings().database_url or config.get_main_option("sqlalchemy.url")
 config.set_main_option("sqlalchemy.url", database_url)
 
 target_metadata = Base.metadata

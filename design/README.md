@@ -1,4 +1,4 @@
-# design/ — pen.dev 设计稿（设计 only，D13）
+﻿# design/ — pen.dev 设计稿（设计 only，D13）
 
 > 本目录是**设计资产**，不是前端代码事实源。代码 UI 仍按 D13 手写（`frontend/src`），
 > 设计稿与 `frontend/src/styles/tokens.css`、`design/tokens.json` **三处同源**。
@@ -29,7 +29,7 @@ python scripts/gen_design_pen.py
 |---|---|---|---|
 | 1 | Run 中心 | `/` | 三模块启动卡、最近运行表、离线成本说明 |
 | 2 | M1 采购申请预检 | `/precheck` | PR 输入、结论横幅、明细/检索候选、findings + 补丁 |
-| 3 | M2 供应商评估 | `/supplier` | 结论 + 置信度、雷达占位、6 闸门条、LLM 复核卡 |
+| 3 | M2 供应商评估 | `/supplier` | 结论 + 置信度、SVG 五维雷达、6 闸门条、LLM 复核卡（`.pen` 中用 ellipse 示意雷达） |
 | 4 | M3 三单匹配 | `/matching` | PO/发票输入、三列对齐表、差异卡片、放行/挂起 |
 | 5 | 规则库 | `/rules` | 品类筛选、规则表（JSONLogic 子集） |
 | 6 | 可观测与评测 | `/observability` | 运行/成本指标卡、事件表、评测摘要 |
@@ -43,3 +43,4 @@ python scripts/gen_design_pen.py
 
 > 说明：`design.pen` 由脚本生成（节点 id 本地有序生成），用于设计评审/交接，不包含可交互逻辑；
 > 若 pen.dev 提示节点 id 归属问题，直接用 `scripts/gen_design_pen.py` 重新生成或在其画布内另存即可。
+

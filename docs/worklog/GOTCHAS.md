@@ -372,4 +372,20 @@
 - **修复手段**：新增 `SPAStaticFiles`，404 且路径没有扩展名时回退 `index.html`；静态资源缺失仍返回 404（避免 MIME 错乱）。
 - **防回归**：验证 `/precheck?run=test` 返回 200 且含 `<div id="root">`；`scripts/screenshots.py` 深链全部成功。
 
+## G-045｜`alembic upgrade head` 不读 `.env`：切库时静默迁移到旧库
+- **问题现象**：本机 `backend/.env` 已改成 VM 地址，`alembic upgrade head` 返回 0，但 VM 库仍然 0 张表；
+  紧接着 `seed.py` 报 `UndefinedTable: relation "invoice_line" does not exist`。
+- **根因定位**：`alembic/env.py` 只读 `os.getenv("DATABASE_URL")`，没有环境变量时回退到 `alembic.ini` 的旧 localhost URL；
+  而业务代码走 pydantic-settings（读 `.env`）。两套解析路径不一致，导致 CLI 静默写旧库、应用写新库。
+- **修复手段**：`env.py` 优先级改为 `os.getenv > get_settings().database_url > alembic.ini`，并在注释里写清历史原因。
+- **防回归**：切库后先 `alembic current` + VM `information_schema.tables` 双确认；本轮 43 表/2 扩展/seed 计数已核对。
+
+## G-046｜0001 基线用 `create_all`，0002 `ADD COLUMN remark` 在全新库上重复加列
+- **问题现象**：VM 全新库迁移报 `DuplicateColumn: column "remark" of relation "invoice" already exists`，
+  且整个 upgrade 事务回滚（43 张表全部没落库）。
+- **根因定位**：0001 基线用**当前 ORM** 的 `Base.metadata.create_all()`，Invoice 模型已含 `remark`；
+  0002 又执行 `ALTER TABLE invoice ADD COLUMN remark`。旧库（先有表、后补列）能跑，全新库必炸。
+- **修复手段**：0002 改为 `ADD COLUMN IF NOT EXISTS` / `DROP COLUMN IF EXISTS`，新库跳过、旧库补列，两条路径都幂等。
+- **防回归**：用全新 VM 库实测 `upgrade head` → 43 表 + `vector`/`pg_trgm` + seed 计数正确；随后三套 e2e smoke 全绿。
+
 <!-- 追加位置：新踩坑写在本行上方 -->
