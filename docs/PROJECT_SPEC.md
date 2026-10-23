@@ -1600,6 +1600,11 @@ INV  : "苹果笔记本电脑 14英寸 M3芯片 16GB内存 512GB固态"
 | `terms_conflict` | — | — | hold | 付款条款冲突（LLM 定性 + 人工确认） |
 | `tail` | ¥0.05 | — | auto_clear | 尾差自动平账 |
 
+> **尾差基准（v1.7，实现口径）**：`tail = 发票价税合计 − Σ(已匹配发票行的含税金额)`，
+> 即"发票内部尾差"；行级差异（`price`/`tax_rate`/`qty_over`）已被单独判定并解释金额差时，
+> **不再重复上报 `amount`**，但尾差仍独立识别（可用 `tail` 与 `price` 同时命中，与 gold 一致）。
+> 若按"应收重算 - 发票合计"比较，浮点乘法会引入 1~2 分噪声造成误报（见 GOTCHAS G-020）。
+
 ```python
 def check(actual, expected, policy) -> Decision:
     delta = actual - expected
@@ -2466,7 +2471,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-23 | v1.3 | 数据工厂落地（§10）：`build_dataset` 纯函数 + `persist_dataset` 落库；230 份 PDF（含 23 份扫描件）、120 份 M1 gold、80 组 M3 gold；异常槽位精确覆盖 §10.3 每类数量；`requires_gr` 驱动收货单生成 | W1-M3 第 1 步实现 |
 | 2026-10-23 | v1.4 | 数据口径修复（自查发现）：`text_ratio` 改为"每 1e3 pt² 字符数"并**将路由阈值从 0.6 标定为 0.15**（原生 PO 实测 0.435~0.509、发票 0.698~0.788、扫描件 0）；`doc.text_ratio` 列类型 numeric(6,4)；`po_line.qty_received` 由收货行汇总回填；PR gold 的 `over_budget` 与 verdict 统一由真实预算/规则推导，新增 block 样本 | W1-M3 开工前自查 |
 | 2026-10-23 | v1.5 | M3 抽取管线落地：`DocumentRouter` + `pdf_native`（**表格结构优先、正则兜底**）+ 校验器 + bbox 注解；`doc_annotation` 坐标明确为**左上原点归一化**；扫描件显式返回 `VLM_REQUIRED` 接缝 | W1-M3 第 2 步实现 |
-| 2026-10-23 | v1.6 | 扫描件 VLM 抽取接入（`VisionExtractor` 接缝 + OpenAI 兼容多模态消息 + Fake 实现）；**repair 只修 Schema、不修业务规则**；`extraction_record`/`doc_annotation` 落库与 `POST /documents/{id}/extract` 落地；抽取基线评测脚本 | W1-M3 第 3 步实现 |
+| 2026-10-23 | v1.7 | M3 匹配层落地：`normalizer`（别名词典 + 规格抽取 → `spec_bucket`）、`align`（L1/L2/L3 + 匈牙利 + 贪心消融）、`tolerances`（`min(ordered, received)` 上限 + 尾差基准 + 金额去重）；扫描件改为**精确配额**分配；M3 基线：overall 100%、6 类 diff F1 100%、行对齐 F1 100% | W1-M3 第 4 步实现 |
 
 ---
 

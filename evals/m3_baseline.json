@@ -1,0 +1,91 @@
+{
+  "dataset": {
+    "seed": 42,
+    "cases": 80,
+    "requires_gr_mix": {
+      "true": 72,
+      "false": 8
+    },
+    "scanned": 12,
+    "partial_invoice": 32
+  },
+  "hungarian": {
+    "variant": "hungarian",
+    "cases": 80,
+    "overall_accuracy": 1.0,
+    "diff_detection": {
+      "micro_precision": 1.0,
+      "micro_recall": 1.0,
+      "micro_f1": 1.0,
+      "tp": 60,
+      "fp": 0,
+      "fn": 0,
+      "per_type": {
+        "date_overdue": {
+          "recall": 1.0,
+          "precision": 1.0,
+          "tp": 10,
+          "fn": 0,
+          "fp": 0
+        },
+        "price": {
+          "recall": 1.0,
+          "precision": 1.0,
+          "tp": 12,
+          "fn": 0,
+          "fp": 0
+        },
+        "qty_over": {
+          "recall": 1.0,
+          "precision": 1.0,
+          "tp": 12,
+          "fn": 0,
+          "fp": 0
+        },
+        "tail": {
+          "recall": 1.0,
+          "precision": 1.0,
+          "tp": 10,
+          "fn": 0,
+          "fp": 0
+        },
+        "tax_rate": {
+          "recall": 1.0,
+          "precision": 1.0,
+          "tp": 8,
+          "fn": 0,
+          "fp": 0
+        },
+        "terms_conflict": {
+          "recall": 1.0,
+          "precision": 1.0,
+          "tp": 8,
+          "fn": 0,
+          "fp": 0
+        }
+      }
+    },
+    "line_alignment": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "tp": 80,
+      "fp": 0,
+      "fn": 0
+    },
+    "mismatches_sample": [],
+    "elapsed_ms": 1.55
+  },
+  "greedy": {
+    "overall_accuracy": 1.0,
+    "diff_micro_f1": 1.0,
+    "line_alignment_f1": 1.0
+  },
+  "notes": [
+    "重要：gold 由与 reconcile 同源的规则生成，1.0 只证明『管线实现与 gold 契约一致』（回归基线），不代表真实业务精度；真实精度需在真实票据上评测。",
+    "种子数据每组只有 1 个 PO 行项目，因此匈牙利与贪心的行对齐指标相同；",
+    "匈牙利相对贪心的优势由单测 test_hungarian_beats_greedy_on_global_conflict 用冲突得分矩阵证明。",
+    "本基线只覆盖确定性路径（不调用 LLM），扫描件抽取准确率见 extraction_baseline.json。"
+  ],
+  "generated_at": "2026-10-23T15:25:12"
+}

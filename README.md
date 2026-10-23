@@ -22,7 +22,7 @@
 - **数据工厂已验证**（W1-M3 第 1 步）：`scripts/seed.py --seed 42` 生成 **230 份 PDF（含 23 份扫描件）/ 8.5MB**、
   120 份 M1 gold、80 组 M3 gold；DB 落 30 供应商 / 100 SKU / 300 历史成交行 / 120 PR / 80 组三单。
 
-尚未落地（按 Spec §11 里程碑）：M3 行对齐/容差/核销与 matching_graph（W1 剩余）、M1 规则与检索（W2）、
+尚未落地（按 Spec §11 里程碑）：`matching_graph` + HITL/`finalize`（W1 最后一步）、M1 规则与检索（W2）、
 M2 评分（W3）、pen.dev 画布与部署（W4）。P0 的演示节点序列（`load_subject → rules_engine → compose_result`）
 是占位，W1 起由 LangGraph 图替换，事件/复核/事务契约不变。
 
@@ -30,7 +30,12 @@ M3 抽取管线（W1 第 2~3 步）已完成：`DocumentRouter`（文本层占�
 （表格结构优先、正则兜底，产出 Pydantic 模型 + 归一化 bbox）、确定性校验器（算术/税率/日期/数量）、
 扫描件 `VLM_REQUIRED` 接缝 + `VisionExtractor`（Fake 可离线测 / LLM 走网关 vision 角色）、
 抽取结果落 `extraction_record` + `doc_annotation`、`POST /documents/{id}/extract`，以及
-`scripts/extract_eval.py` 基线评测（当前：234 份文档，native 覆盖率 87%，发票字段准确率 100%，p50 37ms）。
+`scripts/extract_eval.py` 基线评测（当前：237 份文档、native 213 / scanned 24，发票字段准确率 100%（n=68），p50 39ms）。
+
+M3 匹配层（W1 第 4 步）已完成：`normalizer`（别名 + 规格抽取 → `spec_bucket`）、`align`（L1/L2/L3 +
+匈牙利指派，贪心作消融基线）、`tolerances`（`min(ordered, received)` 上限、五类容差、尾差基准、金额去重），
+`scripts/m3_eval.py` 基线：80 组 gold 上 overall **100%**、6 类差异 **F1 100%**、行对齐 **F1 100%**
+（同源数据一致性基线；真实精度需真实票据验证）。
 
 ## 快速开始（Windows）
 
@@ -41,7 +46,7 @@ pwsh -File scripts/dev.ps1 setup
 # 2) 起数据库（需要 Docker Desktop 已启动）
 pwsh -File scripts/dev.ps1 up
 pwsh -File scripts/dev.ps1 migrate
-pwsh -File scripts/dev.ps1 seed        # 生成合成数据：230 份 PDF + gold（固定 seed=42）
+pwsh -File scripts/dev.ps1 seed        # 生成合成数据：237 份 PDF + gold（固定 seed=42）
 
 # 3) 单测 / 集成测试
 pwsh -File scripts/dev.ps1 test

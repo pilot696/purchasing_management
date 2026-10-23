@@ -678,6 +678,9 @@ def _build_doc_groups(rng, cfg: SeedConfig, master: dict[str, Any]) -> tuple[lis
             raise RuntimeError(f"无法为差异类型 {slot} 找到可分配的组")
     groups: list[dict[str, Any]] = []
     gold: list[dict[str, Any]] = []
+    # 扫描件按"精确配额 + 打散"分配，避免随机流漂移导致比例偏离 Spec（15%）
+    scanned_group_count = max(1, round(cfg.doc_groups * cfg.scanned_ratio))
+    scanned_group_ids = set(rng.sample(range(cfg.doc_groups), scanned_group_count))
 
     for i in range(cfg.doc_groups):
         category = "IT_HW" if i % 5 != 4 else CATEGORIES[i % len(CATEGORIES)][0]
@@ -706,12 +709,12 @@ def _build_doc_groups(rng, cfg: SeedConfig, master: dict[str, Any]) -> tuple[lis
                 "lines": [{"po_line_no": 1, "qty": received_qty, "qc_result": "pass"}],
             }
         ]
-        if rng.random() < 0.10:  # 到货不足：制造 qty_over 语义（可开票上限变低）
+        if "qty_over" in diff_types:  # 到货不足：只对 qty_over 样本注入，避免产生"未被 gold 建模"的差异
             received_qty = max(0, received_qty - rng.choice((1, 2)))
             receipts[0]["lines"][0]["qty"] = received_qty
 
-        # ---- 合同（10% 无合同；15% 扫描件）
-        has_contract = rng.random() >= cfg.no_contract_ratio
+        # ---- 合同（10% 无合同；15% 扫描件）；terms_conflict 样本必须有合同才可判定
+        has_contract = "terms_conflict" in diff_types or rng.random() >= cfg.no_contract_ratio
         contract = None
         if has_contract:
             contract = {
@@ -818,7 +821,13 @@ def _build_doc_groups(rng, cfg: SeedConfig, master: dict[str, Any]) -> tuple[lis
                 }
             )
         if "date_overdue" in diff_types:
-            actual_receipt = promised + timedelta(days=rng.randint(8, 25))
+            overdue_days = rng.randint(8, 25)
+            actual_receipt = promised + timedelta(days=overdue_days)
+            last_day = BASE_DATE - timedelta(days=2)
+            if actual_receipt > last_day:
+                # 收货日不能落在未来：整体前移，同时保持"逾期 overdue_days 天"的语义
+                actual_receipt = last_day
+                promised = actual_receipt - timedelta(days=overdue_days)
             receipts[0]["received_at"] = datetime.combine(actual_receipt, datetime.min.time()) + timedelta(hours=10)
             anomalies.append(
                 {
@@ -833,13 +842,12 @@ def _build_doc_groups(rng, cfg: SeedConfig, master: dict[str, Any]) -> tuple[lis
                 }
             )
 
-        # 收据日期兜底：不应晚于"今天"（BASE_DATE），否则发票会落在未来 → 触发 DATE_FUTURE 校验
+        # 普通单据的收货日期兜底：不应晚于"今天"（BASE_DATE），否则发票会落在未来 → DATE_FUTURE
         last_day = BASE_DATE - timedelta(days=2)
-        received_dt = receipts[0]["received_at"]
-        if received_dt.date() > last_day:
+        if receipts[0]["received_at"].date() > last_day:
             receipts[0]["received_at"] = datetime.combine(last_day, datetime.min.time()) + timedelta(hours=10)
 
-        scanned = rng.random() < cfg.scanned_ratio
+        scanned = i in scanned_group_ids
         invoice_no = f"INV-{FISCAL_YEAR}-{3000 + i:04d}"
         invoice_date = (receipts[0]["received_at"] + timedelta(days=rng.randint(1, 10))).date()
         invoice_date = min(invoice_date, BASE_DATE - timedelta(days=1))

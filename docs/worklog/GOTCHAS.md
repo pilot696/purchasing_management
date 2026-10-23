@@ -188,4 +188,34 @@
   重跑基线后 `needs_review` 从 36 降到 **1**（仅 1 份边缘样本），字段准确率 100%。
 - **防回归**：`scripts/extract_eval.py` 的 `per_doc_type.needs_review` 作为回归观察项；`test_seed.py` 校验单据算术与规模。
 
+## G-020｜尾差误报：浮点噪声 + 行级差异重复计入
+- **问题现象**：M3 基线里 64 组 clean 样本有 2 组被判 `tail`（出现 ¥0.001~0.02 的"假尾差"）；另有 price/tail 同时注入的样本漏报 tail。
+- **根因定位**：首版 `tail = 发票合计 − Σ(consumed × 单价 × (1+税率))`，浮点乘加后再与已按分取整的发票合计比较，
+  误差可达 1~2 分；同时 `amount` 与 `tail` 二选一的写法，在已存在 `price` 差异时把 tail 一并吞掉。
+- **修复手段**：尾差基准改为 **`发票合计 − Σ(已匹配发票行的含税金额)`**（行内已按分取整，无浮点噪声），
+  尾差判定独立于"金额抑制"逻辑：行级差异已解释的金额不重复报 `amount`，但尾差仍单独识别。
+- **防回归**：`test_reconcile_tail_releases_with_note`、`test_reconcile_does_not_double_report_amount`、`test_matching.py::test_reconcile_clean_group_passes`。
+
+## G-021｜overall 判定用了"过期快照"：terms_conflict 漏判 hold
+- **问题现象**：`terms_conflict` 样本的 `overall` 输出 `release_with_note`，而 gold 是 `hold`——差异清单里明明有 `terms_conflict`。
+- **根因定位**：`hard_types` 在"金额检查"之前就算好了，而 `terms_conflict` 的 diff 在之后才 `append`；
+  `overall` 用的是旧集合，于是硬错误被降级成提示。
+- **修复手段**：`overall` 在**所有 diff 生成后**重新计算 `hard_types`；金额抑制处也改为实时读取 diff 类型集合。
+- **防回归**：`test_matching.py::test_reconcile_terms_conflict_detected`（断言 hold + terms_conflict 存在）。
+
+## G-022｜数据工厂的"随机到货不足"产生了 gold 未建模的差异
+- **问题现象**：基线出现 4 例"gold 应为 pass、引擎报 qty_over"的假阳性。
+- **根因定位**：`if rng.random() < 0.10: received_qty -= 1..2` 对所有组生效，但没有对应 gold 差异记录；
+  引擎按 `min(ordered, received)` 正确判超发，反而被算作误报。
+- **修复手段**：到货不足只对 `qty_over` 槽位组注入；gold 与注入逻辑一一对应（数据工厂原则：**每条异常必须有 gold**）。
+- **防回归**：`test_seed.py::test_pr_gold_matches_budget_and_verdict` 同类思路 + `m3_eval.py` 的 `fp=0` 观察项。
+
+## G-023｜扫描件比例漂移（15% → 30%）与 normalizer 连写陷阱
+- **问题现象**：fixed seed 下扫描件组数从 15/80 漂到 24/80；同时 `"16G 512G"` 被单独正则识别成 `storage=16G`。
+- **根因定位**：扫描件概率用逐组 `rng.random() < 0.15`，在 RNG 流被其他分支改变后同 seed 也会大幅波动；
+  `(\d+)G` 单值正则会先命中内存数字，内存/存储**成对写法**未被优先解析。
+- **修复手段**：扫描件改为**精确配额 + `rng.sample` 打散**（`round(80×15%)=12` 组）；
+  normalizer 先匹配 `16G 512G` / `16G/512G` 成对模式，再对孤立 `NNNG` 做 ≥128→存储、<128→内存的兜底分类。
+- **防回归**：`extraction_baseline.json` 的 `scanned/docs` 比例；`test_matching.py::test_normalize_english_and_chinese_names_share_bucket`。
+
 <!-- 追加位置：新踩坑写在本行上方 -->

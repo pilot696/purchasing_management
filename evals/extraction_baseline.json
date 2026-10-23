@@ -1,24 +1,24 @@
 {
-  "docs": 234,
+  "docs": 237,
   "route_distribution": {
-    "pdf_native": 204,
-    "scanned": 30
+    "pdf_native": 213,
+    "scanned": 24
   },
   "extractor_distribution": {
-    "pdf_native": 204,
-    "none": 30
+    "pdf_native": 213,
+    "none": 24
   },
-  "scanned_needs_vlm": 30,
+  "scanned_needs_vlm": 24,
   "per_doc_type": {
     "contract": {
-      "ok": 60,
+      "ok": 65,
       "needs_review": 0,
-      "failed": 14
+      "failed": 12
     },
     "invoice": {
-      "ok": 63,
-      "needs_review": 1,
-      "failed": 16
+      "ok": 68,
+      "needs_review": 0,
+      "failed": 12
     },
     "po": {
       "ok": 80,
@@ -32,41 +32,41 @@
     "seller_name": 1.0
   },
   "invoice_field_n": {
-    "invoice_no": 64,
-    "amount_tax_incl": 64,
-    "seller_name": 64
+    "invoice_no": 68,
+    "amount_tax_incl": 68,
+    "seller_name": 68
   },
   "latency_ms": {
-    "p50": 37.52,
-    "p95": 43.29,
-    "mean": 31.52
+    "p50": 39.15,
+    "p95": 46.14,
+    "mean": 33.91
   },
   "failures_sample": [
     {
-      "doc_id": "0820f1f6-1e0a-4826-a687-635a46bdcf2c",
+      "doc_id": "168daaff-ed4e-4645-8b5d-023f77566f37",
       "doc_type": "contract",
       "code": "no_extract"
     },
     {
-      "doc_id": "0af0499c-96e9-4f44-803f-02777f11081c",
+      "doc_id": "3e9490f4-abdd-49a7-b232-32a4e25178a7",
       "doc_type": "contract",
       "code": "no_extract"
     },
     {
-      "doc_id": "11e4d3cf-654e-4368-9f61-3367c7d33189",
+      "doc_id": "56b8fbcf-34fa-4e89-bf1a-07a8306f6964",
       "doc_type": "contract",
       "code": "no_extract"
     },
     {
-      "doc_id": "167e302d-ff4e-40aa-93a0-54154e06852f",
+      "doc_id": "5c5a649f-536c-4aa7-85aa-b246eaf840ae",
       "doc_type": "contract",
       "code": "no_extract"
     },
     {
-      "doc_id": "1e98a5ce-72f1-44eb-899d-6f2e3cc6def7",
+      "doc_id": "7081ef49-02f1-4bd6-a8de-97ac514cd251",
       "doc_type": "contract",
       "code": "no_extract"
     }
   ],
-  "generated_at": "2026-10-23T14:43:29"
+  "generated_at": "2026-10-23T15:25:11"
 }

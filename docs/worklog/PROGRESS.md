@@ -16,6 +16,21 @@
 
 ## 留痕记录（倒序追加，最新在上）
 
+### [2026-10-23 15:30] W1-M3 第 4 步：normalizer + align（匈牙利）+ tolerance/reconcile + M3 基线
+- **变更文件**：新增 `backend/app/matching/{normalize,align,tolerance}.py`、`data/aliases.yaml`、`backend/tests/test_matching.py`、`scripts/m3_eval.py`、`evals/m3_baseline.json`；修改 `backend/app/seed/dataset.py`（扫描件精确配额、到货不足仅限 qty_over 组、terms_conflict 强制有合同、date_overdue 日期倒推）
+- **GitNexus 影响面**：`matching/*` 为新增纯函数层；`normalize`/`align` 将被 matching_graph 与 W2 检索复用；`dataset.py` 改动仅影响数据工厂输出与 gold（已重跑两套基线）
+- **核心设计执行**：
+  - `normalize`：**规则优先**（品类别名 → family；内存/存储成对正则 → 单值兜底；SAAS/外包量纲），产出 M1/M2/M3 共用 `spec_bucket`；
+  - `align`：L1 sku 精确 → L2 规格桶 → L3 difflib 语义；`scipy.optimize.linear_sum_assignment` 全局指派（0.75 接受 / 0.90 非歧义），`align_greedy` 作为消融基线；
+  - `tolerance`：可开票上限 `min(ordered, received) - qty_invoiced`（服务类回退 ordered）；`price/tax/qty_over` 等行级差异**自动抑制重复 amount**；`tail` 用发票行合计作基准；`overall` 只在全部 diff 产生后判定；
+  - 仍坚持"分析先行"：`reconcile` 只产出 `consumed_qty/remaining_qty/proposed_tail`，**不写** `qty_invoiced` 与尾差池（留给 `finalize`）
+- **验证结果**：
+  - `pytest tests/test_matching.py` → **13 passed**；全量后端 **66 passed / 9 skipped** + integration **9 passed**
+  - **M3 基线（80 组）**：`overall_accuracy=100%`、6 类差异 `micro P/R/F1=1.0`（tp=60, fp=0, fn=0）、行对齐 `F1=1.0`（80/80）
+  - **抽取基线（重跑，237 份文档）**：native 213 / scanned 24（15% 组配额）；invoice 字段准确率 **100%（n=68）**；0 needs_review；p50 **39ms** / p95 46ms
+- **数据/代码修复（详见 GOTCHAS G-020~G-023）**：尾差浮点误报、`overall` 用过期 `hard_types` 快照导致 terms_conflict 漏 hold、随机到货不足产生 gold 未建模差异、扫描件比例漂移
+- **下一步 (Next)**：`matching_graph`（LangGraph 节点编排 + `interrupt_before` HITL）+ `finalize` 事务（`qty_invoiced`/尾差池/审计）+ `/runs` M3 接入 + 前端对齐表/PDF 抽屉
+
 ### [2026-10-23 15:05] W1-M3 第 3 步：扫描件 VLM 路径 + 抽取落库 + 文档接口 + 基线评测
 - **变更文件**：
   - 新增 `backend/app/extraction/{vlm,render_pages,persist}.py`、`backend/app/llm/multimodal.py`、`backend/app/api/v1/documents.py`、`backend/tests/{test_vlm_extraction,test_documents_api}.py`、`scripts/extract_eval.py`

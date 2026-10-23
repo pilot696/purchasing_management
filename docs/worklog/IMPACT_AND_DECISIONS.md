@@ -12,6 +12,18 @@
 
 ## 决策记录（倒序追加，最新在上）
 
+### ADR-017｜匹配层保持"纯函数 + 分析先行"，匈牙利用于全局指派
+- **触发原因**：M3 是三单状态机，必须让每行判定可溯源、可单测、可回放；且 HITL 前不得写会计事实。
+- **GitNexus impact**：`matching/*` 为新增层（无既有上游），将成为 `matching_graph` 节点与 W2 检索的公共依赖；
+  `normalize.py`/`align.py` 被 `tests/test_matching.py` 与 `scripts/m3_eval.py` 引用，后续改签名需先 `impact`。
+- **最终方案**：
+  1. `normalize` 规则优先（别名 → family → 规格槽位），无 LLM；`spec_bucket` 作为跨模块公共语义坐标；
+  2. `align` 三级评分 + `scipy.optimize.linear_sum_assignment`（新增依赖 scipy），保留贪心基线用于消融；
+  3. `tolerance` 纯函数输出 `proposed_consumed_qty/proposed_tail/diffs/overall`，**不落库**；
+  4. `min(ordered, received)` 上限（服务类回退 `ordered`）、尾差基准改"发票行含税合计"、行级差异抑制重复 `amount`；
+  5. 扫描件配额精确化，保证评测集比例稳定。
+- **同步更新 Spec**：§7.4/§7.5 实现口径（尾差基准、金额去重）、§13.3 v1.7。
+
 ### ADR-016｜VLM 以 Protocol 接缝接入；repair 只修 Schema，不修业务规则
 - **触发原因**：M3 必须处理 15% 扫描件，但项目当前没有可用的视觉 API key，且不能把"未来接真实模型"变成阻塞；
   同时需要区分"模型输出格式错"与"模型漏了业务字段"。

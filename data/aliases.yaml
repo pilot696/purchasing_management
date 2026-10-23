@@ -1,0 +1,26 @@
+# 品牌/产品别名词典（Spec §5.4.4 / §7.4）
+# key = 规范名（会被归一化匹配），value = 常见写法（大小写/空格不敏感）
+brands:
+  苹果: [apple, mac, macbook, mac book, 苹果笔记本, 苹果电脑, macbookpro, mbp]
+  联想: [lenovo, thinkpad, think book, 联想笔记本, 小新, t14, x1]
+  戴尔: [dell, latitude, precision, 戴尔笔记本]
+  惠普: [hp, elitebook, 惠普笔记本]
+  华为: [huawei, matebook, 华为笔记本, 华为显示器]
+  华硕: [asus, 华硕笔记本]
+  微软: [microsoft, surface]
+  飞书: [feishu, lark, 飞书企业版]
+  钉钉: [dingtalk, 钉钉专业版]
+  奥多比: [adobe, creative cloud, cc]
+  菲格玛: [figma]
+  思科: [cisco]
+  华为网络: [h3c, 华三, 交换机]
+
+# 品类别名 → family（决定 spec_bucket 的 family 前缀）
+families:
+  laptop: [笔记本, 笔记本电脑, 便携机, 办公电脑, 电脑, 移动工作站]
+  server: [服务器, 机架式, tower 服务器]
+  monitor: [显示器, 屏幕, 显示终端]
+  peripheral: [鼠标, 键盘, 扩展坞, 耳机]
+  saas: [saas, 订阅, 账号, license, 软件订阅, 云服务, 席位]
+  admin: [办公用品, 耗材, 复印纸, 文具, 家具, 桌椅]
+  outsource: [外包, 服务, 活动, 会务, 拍摄, 代运营, 调研, 设计]
