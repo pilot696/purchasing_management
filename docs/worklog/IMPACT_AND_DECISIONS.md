@@ -12,6 +12,17 @@
 
 ## 决策记录（倒序追加，最新在上）
 
+### ADR-013｜数据工厂拆分为「纯构建」与「副作用落库」，异常槽位精确分配
+- **触发原因**：Spec §10 要求"生成即金标、固定 seed 可复现"。若构建函数直接写 DB/文件，单测必须连库，且难以验证确定性；
+  §10.3 又要求每个差异类型 ≥10 正样本，随机分配会缺样本（首版 `price` 只有 11 条）。
+- **GitNexus impact**：纯新增（`app/seed/*`、`scripts/seed.py`、`tests/test_seed.py`），无既有符号被修改；新模块后续被 W1 抽取/评测脚本引用。
+- **最终方案**：
+  1. `build_dataset(cfg) -> dict` 纯函数（无 DB/IO），`persist_dataset()` 负责落库/写盘/gold；
+  2. `rl_config.invariant = 1` + sha256 派生 RNG，保证 PDF 与数据都字节/数值级可复现；
+  3. 异常槽位按"类型不重复落到同组"的游标分配，精确满足 `DIFF_PLAN` 的每类数量；
+  4. `requires_gr` 驱动收货单生成（SaaS/市场外包无 GR），为 W1 的 `min(ordered, received)` 核销规则提供真实反例。
+- **同步更新 Spec**：§10.2/§10.3/§10.4 的实现对齐（无设计变更）；§13.3 记录 v1.3。
+
 ### ADR-012｜新增 `scripts/smoke_e2e.py` 作为端到端验收脚本
 - **触发原因**：单测与集成测试覆盖不到"HTTP + SSE + HITL 恢复 + 快照"的完整链路；需要一条可在 CI/演示前重复执行的验收命令。
 - **GitNexus impact**：新增文件，无既有符号被修改。

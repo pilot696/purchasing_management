@@ -42,6 +42,10 @@ switch ($Command.ToLower()) {
         & $python -m alembic upgrade head
         Write-Host 'schema 迁移完成（含 pgvector / pg_trgm 扩展）' -ForegroundColor Green
     }
+    'seed' {
+        if (-not $env:DATABASE_URL) { $env:DATABASE_URL = 'postgresql+psycopg://app:app@localhost:5432/procurement' }
+        & $python (Join-Path $root 'scripts\seed.py') --seed 42
+    }
     'test' {
         Set-Location (Join-Path $root 'backend')
         & $python -m pytest

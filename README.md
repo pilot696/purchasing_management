@@ -15,10 +15,12 @@
   SSE 事件流（回放 `?after_seq=` + 心跳 + 终态收尾）、LLM 网关（角色路由 / 跨厂商降级 / 重试 / prompt 缓存 /
   `llm_call` 记账）、演示运行与 HITL 中断恢复。
 - 前端：React 19 + Vite + Tailwind + TanStack Query 壳，6 页路由，SSE `fetch` 流 + 纯函数 reducer（18 条单测）。
-- 测试：后端单测 **28 passed / 3 skipped**（无 DB 时集成测试自动 skip；有 DB 时 `-m integration` 全绿）；前端 reducer + SSE 解析器 **18 条单测**；
+- 测试：后端单测 **38 passed / 3 skipped**（无 DB 时集成测试自动 skip；有 DB 时 `-m integration` 全绿）；前端 reducer + SSE 解析器 **18 条单测**；
   `tsc --noEmit` 与 `vite build` 均通过。
 - **端到端已验证**（2026-10-23）：`alembic upgrade head` → 43 张 public 表 + `vector`/`pg_trgm`；集成测试 3 passed；
   `scripts/smoke_e2e.py` 跑通「建 run → SSE → interrupt → requester 403 → buyer resume → run.end → 快照校验」。
+- **数据工厂已验证**（W1-M3 第 1 步）：`scripts/seed.py --seed 42` 生成 **230 份 PDF（含 23 份扫描件）/ 8.5MB**、
+  120 份 M1 gold、80 组 M3 gold；DB 落 30 供应商 / 100 SKU / 300 历史成交行 / 120 PR / 80 组三单。
 
 尚未落地（按 Spec §11 里程碑）：M3 抽取/对齐/容差（W1）、M1 规则与检索（W2）、M2 评分（W3）、
 pen.dev 画布与部署（W4）。P0 的演示节点序列（`load_subject → rules_engine → compose_result`）是占位，
@@ -33,6 +35,7 @@ pwsh -File scripts/dev.ps1 setup
 # 2) 起数据库（需要 Docker Desktop 已启动）
 pwsh -File scripts/dev.ps1 up
 pwsh -File scripts/dev.ps1 migrate
+pwsh -File scripts/dev.ps1 seed        # 生成合成数据：230 份 PDF + gold（固定 seed=42）
 
 # 3) 单测 / 集成测试
 pwsh -File scripts/dev.ps1 test

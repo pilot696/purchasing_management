@@ -117,4 +117,19 @@
   DB 健康检查 `pg_isready` 通过后再跑迁移。
 - **防回归**：`scripts/dev.ps1 up` 之后 `docker compose ps` 看到 `healthy` 才继续；`doctor.ps1` 把 5432 端口探测作为判据。
 
+## G-012｜Python `hash()` 随机化让"同一 seed 数据不一致"
+- **问题现象**：数据工厂里用 `random.Random(seed ^ hash(case_id))` 给每个单据组派生 RNG，单进程内可复现，
+  但**跨进程**（每次 `python scripts/seed.py`）哈希不同 → 同一 seed 生成的金额/日期发生漂移，gold 与 DB 对不上。
+- **根因定位**：CPython 对 `str` 的 `hash()` 默认开启随机化（`PYTHONHASHSEED`），这不是随机数种子的问题，是**派生种子不可复现**。
+- **修复手段**：改用 `hashlib.sha256(f"{seed}:{case_id}").digest()[:8]` 派生 RNG（`persist.py`）；
+  单测 `test_dataset_is_deterministic` 直接比对同一 seed 的完整 JSON 哈希。
+- **防回归**：`test_seed.py::test_dataset_is_deterministic`（10 条 seed 测试之一）。
+
+## G-013｜ReportLab 中文与 pypdfium2 版本探测
+- **问题现象**：① ReportLab 默认字体不支持中文（显示黑块/报错）；② `import pypdfium2 as pdfium; pdfium.__version__` 抛 `AttributeError`。
+- **根因定位**：① ReportLab 内置拉丁字体无 CJK 字形，需注册 CID 字体；② pypdfium2 不暴露 `__version__`（用 `V_PYPDFIUM2`）。
+- **修复手段**：① `pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))` 并统一 `ParagraphStyle(fontName="STSong-Light")`；
+  ② 版本检查只 import 不取 `__version__`。
+- **防回归**：`test_seed.py::test_pdf_has_text_layer` 断言抽取文本包含"增值税"与发票号；`test_contract_contains_payment_terms` 断言"付款条款"。
+
 <!-- 追加位置：新踩坑写在本行上方 -->

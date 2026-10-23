@@ -2458,6 +2458,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-23 | v1.1 | ① 可开票上限改为 `min(ordered, received)`（新增 `category_template.requires_gr` 开关，§3.2/§7.5/§7.9）② 会计事实写入推迟到 `finalize`，HITL 前只落分析结果（§4.6/§7.5/§7.6）③ 补 `audit_log` / `supplier_eval` 表（§3.7）④ 降级链改跨厂商：`reason_small` → `glm-5.3-flash`，视觉降级先跨厂商（§4.2/附录 A）⑤ SSE 重连理由更正为"原生 EventSource 不支持自定义 Header"（§2.1/§9.6） | 定稿前审阅（4 项成立） |
 | 2026-10-23 | — | 审定未采纳两项：`deepseek-v4-flash` 经官方页核实为**遗留别名**，当前模型名是 `deepseek-flash`（脚注原文见 §2.5），故不改名；"第 840 行后残留提示词"核实不存在（该行为 Mermaid 节点，全文关键词 grep 0 命中） | 审阅意见复核 |
 | 2026-10-23 | v1.2 | 运行时入口补充：新增 `backend/run.py` 与 `app/core/loop.py`，修正 Windows 下 uvicorn 单进程硬编码 `ProactorEventLoop` 导致 psycopg 异步连接全不可用的问题（§2.3、附录 A.3；排障见 worklog GOTCHAS G-009） | W0 端到端联调实测 |
+| 2026-10-23 | v1.3 | 数据工厂落地（§10）：`build_dataset` 纯函数 + `persist_dataset` 落库；230 份 PDF（含 23 份扫描件）、120 份 M1 gold、80 组 M3 gold；异常槽位精确覆盖 §10.3 每类数量；`requires_gr` 驱动收货单生成 | W1-M3 第 1 步实现 |
 
 ---
 

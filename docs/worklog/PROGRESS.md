@@ -16,6 +16,27 @@
 
 ## 留痕记录（倒序追加，最新在上）
 
+### [2026-10-23 14:15] W1-M3 第 1 步：数据工厂完成（master + 230 份 PDF + 自动 gold）
+- **变更文件**：
+  - 新增 `backend/app/seed/{__init__,config,dataset,render,degrade,persist,runner}.py`、`scripts/seed.py`
+  - 新增 `backend/tests/test_seed.py`（10 条纯函数测试）
+  - 更新 `backend/pyproject.toml`、`backend/requirements.txt`（reportlab / pillow / pypdfium2 / pdfplumber）、`Makefile`（`make seed`）、`scripts/dev.ps1`（`seed` 命令）
+- **GitNexus 影响面**：纯新增模块 + 配置文件；未修改任何既有符号（`detect_changes` 结果见提交前记录）
+- **核心设计执行**：
+  - `build_dataset(cfg)` 与 `persist_dataset(cfg)` **纯函数与副作用分离**，保证单测可离线验证确定性；
+  - `rl_config.invariant = 1` 让 ReportLab 输出字节稳定；中文用内置 CID 字体 `STSong-Light`（零外部字体）；
+  - 扫描件退化：pypdfium2 渲染 → Pillow 旋转/模糊/JPEG/阴影 → ReportLab 重打包（**无文本层**）；
+  - 异常覆盖按 `DIFF_PLAN` 精确分配槽位（每个槽位落到"尚未出现该类型"的组），保证 §10.3 每类 ≥10 正样本；
+  - `requires_gr` 驱动：SaaS/市场外包不生成收货单；实物类收货不足会压低"可开票上限"。
+- **验证结果**：
+  - `pytest tests/test_seed.py` → **10 passed**（确定性哈希、规模、异常覆盖、整体结论一致性、发票算术、PDF 文本层、扫描件无文本层、合同付款条款）；
+  - `scripts/seed.py --seed 42` → **SEED_OK**：230 份 PDF / 8.52MB；`gold_m1=120`、`gold_m3=80`；
+  - DB 实证：supplier 30、sku 100、po_history 300、pr 120、contract 70（=80−10 无合同）、po 80、receipt 72、invoice 80、doc 230；
+    `doc` 文本层分布 native contract 59 / invoice 68 / po 80，scanned contract 11 / invoice 12（text_ratio=0）；
+    contract↔doc / invoice↔doc 外键全部对齐（70 / 80）
+  - 全量：后端 **38 passed / 3 skipped** + integration **3 passed**
+- **下一步 (Next)**：M3 抽取管线——`DocumentRouter` 分流 + `pdf_native`（pdfplumber 文本/表格/字符坐标 bbox）+ 校验器 + `extraction_record` 落库
+
 ### [2026-10-23 14:00] W0 收尾：PostgreSQL 启动 + 迁移 + 集成测试 + 端到端 SSE 冒烟全部通过
 - **变更文件**：`backend/run.py`（新增，Windows 事件循环入口）、`backend/app/core/loop.py`（新增）、`backend/app/main.py`（导入时兜底切策略）、`backend/tests/conftest.py`（pytest 前切策略）、`scripts/smoke_e2e.py`（新增，端到端冒烟）、`scripts/dev.ps1`（api / test-int 命令修正）、`scripts/_debug_db.py`（临时调试脚本，已删除）
 - **GitNexus 影响面**：`impact "create_app"` → **LOW**（depth 1，仅 main.py）；`impact "db_ping"` → **LOW**（上游 healthz/readyz）；`detect-changes` 结果见提交前记录
