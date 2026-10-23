@@ -12,7 +12,8 @@ MessageRole = Literal["system", "user", "assistant", "tool"]
 
 class Message(BaseModel):
     role: MessageRole
-    content: str
+    # 纯文本，或多模态 content parts（OpenAI 兼容格式：[{type:"text"...},{type:"image_url"...}]）
+    content: str | list[dict[str, Any]]
 
 
 class Usage(BaseModel):

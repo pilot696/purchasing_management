@@ -172,4 +172,20 @@
 - **防回归**：`test_extraction.py` 8 条（字段一致性、bbox 归一化、三类模板路由、扫描件待 VLM、篡改合计可检出）。
 - **教训（可讲）**：`extract_text()` 能读 ≠ `search()` 能定位；**以表格结构为主、正则只做兜底**比"全文正则一把梭"稳一个量级。
 
+## G-018｜repair loop 不该"什么错都重试"：Schema 失败重试、业务校验失败进人工
+- **问题现象**：首版 VLM 单测里 `{"invoice_no": "BROKEN"}`（无行项目）居然**通过 Pydantic 校验**（其余字段都有默认值），
+  结果 repair 循环以为成功，随后被业务校验器判 high —— 如果继续把业务错误回填模型重试，等于让模型"猜"业务规则。
+- **根因定位**：`invoice_no` 是唯一必填字段，`lines`/`seller_name` 都是可空默认；Schema 合法 ≠ 业务可用。
+- **修复手段**：明确两层——Schema/JSON 解析失败才 repair（`max_attempts=3`）；业务校验（LINES_EMPTY / SELLER_MISSING 等）
+  只产 `ValidationIssue` 并进 `needs_review_fields`，不再消耗模型调用。
+- **防回归**：`test_vlm_extraction.py` 四条（repair 恢复 / repair 耗尽 / 业务缺失→needs_review / 无 vision→VLM_REQUIRED）。
+
+## G-019｜合成数据里的"未来发票"污染抽取基线（DATE_FUTURE）
+- **问题现象**：抽取基线显示 64 份原生发票里 36 份 `needs_review`，全部命中 `DATE_FUTURE`（开票日期晚于今天）。
+- **根因定位**：数据工厂用 `BASE_DATE + 随机天数` 生成承诺交期/收货/开票日期，末端单据落到 2026-11 之后；
+  发票日期由"收货 + 1~10 天"推导，于是出现 2026-11/12 的"未来发票"。校验器是对的，错在数据。
+- **修复手段**：生成时把收货日期钳制到 `BASE_DATE-2`、开票日期钳制到 `BASE_DATE-1`（保持"收货 < 开票"）；
+  重跑基线后 `needs_review` 从 36 降到 **1**（仅 1 份边缘样本），字段准确率 100%。
+- **防回归**：`scripts/extract_eval.py` 的 `per_doc_type.needs_review` 作为回归观察项；`test_seed.py` 校验单据算术与规模。
+
 <!-- 追加位置：新踩坑写在本行上方 -->

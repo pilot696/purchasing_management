@@ -26,9 +26,11 @@
 M2 评分（W3）、pen.dev 画布与部署（W4）。P0 的演示节点序列（`load_subject → rules_engine → compose_result`）
 是占位，W1 起由 LangGraph 图替换，事件/复核/事务契约不变。
 
-M3 抽取管线（W1 第 2 步）已完成：`DocumentRouter`（文本层占比 + 模板锚点分流）、`pdf_native`
+M3 抽取管线（W1 第 2~3 步）已完成：`DocumentRouter`（文本层占比 + 模板锚点分流）、`pdf_native`
 （表格结构优先、正则兜底，产出 Pydantic 模型 + 归一化 bbox）、确定性校验器（算术/税率/日期/数量）、
-扫描件显式标记 `VLM_REQUIRED`。
+扫描件 `VLM_REQUIRED` 接缝 + `VisionExtractor`（Fake 可离线测 / LLM 走网关 vision 角色）、
+抽取结果落 `extraction_record` + `doc_annotation`、`POST /documents/{id}/extract`，以及
+`scripts/extract_eval.py` 基线评测（当前：234 份文档，native 覆盖率 87%，发票字段准确率 100%，p50 37ms）。
 
 ## 快速开始（Windows）
 

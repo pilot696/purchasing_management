@@ -833,13 +833,21 @@ def _build_doc_groups(rng, cfg: SeedConfig, master: dict[str, Any]) -> tuple[lis
                 }
             )
 
+        # 收据日期兜底：不应晚于"今天"（BASE_DATE），否则发票会落在未来 → 触发 DATE_FUTURE 校验
+        last_day = BASE_DATE - timedelta(days=2)
+        received_dt = receipts[0]["received_at"]
+        if received_dt.date() > last_day:
+            receipts[0]["received_at"] = datetime.combine(last_day, datetime.min.time()) + timedelta(hours=10)
+
         scanned = rng.random() < cfg.scanned_ratio
         invoice_no = f"INV-{FISCAL_YEAR}-{3000 + i:04d}"
+        invoice_date = (receipts[0]["received_at"] + timedelta(days=rng.randint(1, 10))).date()
+        invoice_date = min(invoice_date, BASE_DATE - timedelta(days=1))
         invoices = [
             {
                 "invoice_no": invoice_no,
                 "invoice_code": f"011002{2026}{i:04d}",
-                "invoice_date": (receipts[0]["received_at"] + timedelta(days=rng.randint(1, 10))).date(),
+                "invoice_date": invoice_date,
                 "amount_tax_excl": inv_amount,
                 "tax_amount": inv_tax,
                 "amount_tax_incl": inv_total,

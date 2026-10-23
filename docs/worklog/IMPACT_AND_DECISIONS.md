@@ -12,6 +12,18 @@
 
 ## 决策记录（倒序追加，最新在上）
 
+### ADR-016｜VLM 以 Protocol 接缝接入；repair 只修 Schema，不修业务规则
+- **触发原因**：M3 必须处理 15% 扫描件，但项目当前没有可用的视觉 API key，且不能把"未来接真实模型"变成阻塞；
+  同时需要区分"模型输出格式错"与"模型漏了业务字段"。
+- **GitNexus impact**：`app/llm/types.py::Message` 是公共底座（全部 LLM 调用共用），content 扩为 `str | list[dict]`
+  后影响 gateway 与 extraction；`impact "Message"` 上下游已核对，`detect_changes` 见提交记录。其余为新增模块。
+- **最终方案**：
+  1. `VisionExtractor` 协议 + `FakeVisionExtractor`/`LLMVisionExtractor` 两实现：单测零网络，真实调用走网关 `vision` 角色；
+  2. 多模态消息按 OpenAI 兼容 content parts 构造（data URL），provider 透传，FakeLLM 只统计文本 token；
+  3. repair 仅覆盖 Schema/Pydantic 失败（≤2 次）；业务校验失败不重试，进 `needs_review_fields`（G-018）；
+  4. 抽取结果落 `extraction_record` + `doc_annotation`，`doc` 回写 route 元数据；文档接口只读 + 触发抽取，不做上传（W2 补）。
+- **同步更新 Spec**：§7.2 repair 语义、§8.3 documents 接口落地（子集）、§13.3 v1.6。
+
 ### ADR-015｜抽取管线「结构优先、正则兜底」，bbox 采用左上原点归一化
 - **触发原因**：Spec §7.2 要求"确定性优先、VLM 只兜底"。首版实现按全文正则抽取，三类文档全部解析失败/
   字段不全（GOTCHAS G-017），说明 ReportLab 表格的文本布局不适合纯正则。

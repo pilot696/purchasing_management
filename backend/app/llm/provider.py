@@ -18,6 +18,18 @@ def _estimate_tokens(text: str) -> int:
     return max(1, cjk + (len(text) - cjk) // 4)
 
 
+def _prompt_text(messages: list[Message]) -> str:
+    parts: list[str] = []
+    for message in messages:
+        if isinstance(message.content, str):
+            parts.append(message.content)
+        else:
+            for part in message.content:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    parts.append(str(part.get("text", "")))
+    return "".join(parts)
+
+
 class FakeLLMProvider:
     """确定性的假 provider：按角色返回固定文本，可注入失败次数用于测重试/降级。
 
@@ -62,7 +74,7 @@ class FakeLLMProvider:
             await asyncio.sleep(self.latency_ms / 1000)
         key = f"{self.name}:{model}"
         text = self.responses.get(key) or self.responses.get("*") or '{"ok": true}'
-        prompt_text = "".join(m.content for m in messages)
+        prompt_text = _prompt_text(messages)
         usage = Usage(tokens_in=_estimate_tokens(prompt_text), tokens_out=_estimate_tokens(text))
         return LLMResult(
             provider=self.name,

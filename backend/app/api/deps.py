@@ -9,10 +9,11 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import Depends, Header, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.errors import RoleForbidden
-from app.db.session import get_session_factory
+from app.db.session import get_session, get_session_factory
 from app.observability.runevents import EventBus
 from app.services.runs import RunService
 
@@ -68,3 +69,4 @@ def require_module_role(role: str, module: str) -> None:
 BusDep = Annotated[EventBus, Depends(get_event_bus)]
 RunServiceDep = Annotated[RunService, Depends(get_run_service)]
 RoleDep = Annotated[str, Depends(get_demo_role)]
+SessionDep = Annotated[AsyncSession, Depends(get_session)]

@@ -1,4 +1,4 @@
-"""抽取管线单测（纯函数 + 内存 PDF，不依赖 DB/文件系统）。"""
+﻿"""抽取管线单测（纯函数 + 内存 PDF，不依赖 DB/文件系统）。"""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def _invoice_pdf(group: dict, dataset: dict) -> bytes:
     return render_invoice(group["invoices"][0], group["po"], _supplier_name(dataset, group["supplier_code"]))
 
 
-def test_router_routes_native_templates(dataset: dict) -> None:
+async def test_router_routes_native_templates(dataset: dict) -> None:
     group = _clean_group(dataset)
     supplier = _supplier_name(dataset, group["supplier_code"])
     invoice_route = route_document(_invoice_pdf(group, dataset))
@@ -47,7 +47,7 @@ def test_router_routes_native_templates(dataset: dict) -> None:
     assert invoice_route.has_text_layer is True
 
 
-def test_router_routes_scanned(dataset: dict) -> None:
+async def test_router_routes_scanned(dataset: dict) -> None:
     group = _clean_group(dataset)
     scanned = degrade_pdf(_invoice_pdf(group, dataset), random.Random(11))
     route = route_document(scanned)
@@ -56,10 +56,10 @@ def test_router_routes_scanned(dataset: dict) -> None:
     assert route.text_ratio < 0.05
 
 
-def test_extract_invoice_fields_match_source(dataset: dict) -> None:
+async def test_extract_invoice_fields_match_source(dataset: dict) -> None:
     group = _clean_group(dataset)
     source = group["invoices"][0]
-    result = extract_document(_invoice_pdf(group, dataset), "invoice")
+    result = await extract_document(_invoice_pdf(group, dataset), "invoice")
     assert result.ok, result.issues
     invoice = InvoiceExtract.model_validate(result.extract)
     assert invoice.invoice_no == source["invoice_no"]
@@ -72,10 +72,10 @@ def test_extract_invoice_fields_match_source(dataset: dict) -> None:
     assert invoice.po_no == group["po"]["po_no"]
 
 
-def test_extract_po_and_contract(dataset: dict) -> None:
+async def test_extract_po_and_contract(dataset: dict) -> None:
     group = _clean_group(dataset)
     supplier = _supplier_name(dataset, group["supplier_code"])
-    po_result = extract_document(render_po(group["po"], supplier), "po")
+    po_result = await extract_document(render_po(group["po"], supplier), "po")
     assert po_result.ok, po_result.issues
     assert po_result.extract is not None
     assert po_result.extract["po_no"] == group["po"]["po_no"]
@@ -84,7 +84,7 @@ def test_extract_po_and_contract(dataset: dict) -> None:
         group["po"]["total_amount_tax_incl"], abs=0.01
     )
 
-    contract_result = extract_document(
+    contract_result = await extract_document(
         render_contract(group["contract"], supplier, group["po"]["po_no"]), "contract"
     )
     assert contract_result.ok, contract_result.issues
@@ -95,9 +95,9 @@ def test_extract_po_and_contract(dataset: dict) -> None:
     assert contract["po_no"] == group["po"]["po_no"]
 
 
-def test_annotations_are_normalized(dataset: dict) -> None:
+async def test_annotations_are_normalized(dataset: dict) -> None:
     group = _clean_group(dataset)
-    result = extract_document(_invoice_pdf(group, dataset), "invoice")
+    result = await extract_document(_invoice_pdf(group, dataset), "invoice")
     fields = {a.field_name for a in result.annotations}
     assert {"invoice_no", "seller_name", "amount_tax_incl"} <= fields
     for annotation in result.annotations:
@@ -105,26 +105,27 @@ def test_annotations_are_normalized(dataset: dict) -> None:
         assert 0.0 <= annotation.y0 < annotation.y1 <= 1.0
 
 
-def test_extract_invoice_with_tail_has_no_high_issues(dataset: dict) -> None:
+async def test_extract_invoice_with_tail_has_no_high_issues(dataset: dict) -> None:
     group = next(g for g in dataset["doc_groups"] if "tail" in g["diff_types"])
-    result = extract_document(_invoice_pdf(group, dataset), "invoice")
+    result = await extract_document(_invoice_pdf(group, dataset), "invoice")
     assert result.extract is not None
     assert not [i for i in result.issues if i.severity == "high"], result.issues
 
 
-def test_validator_detects_broken_total(dataset: dict) -> None:
+async def test_validator_detects_broken_total(dataset: dict) -> None:
     group = _clean_group(dataset)
-    result = extract_document(_invoice_pdf(group, dataset), "invoice")
+    result = await extract_document(_invoice_pdf(group, dataset), "invoice")
     invoice = InvoiceExtract.model_validate(result.extract)
     broken = invoice.model_copy(update={"amount_tax_incl": (invoice.amount_tax_incl or 0) + 1})
     issues = validate_invoice(broken)
     assert any(issue.code == "ARITH_TOTAL" and issue.severity == "high" for issue in issues)
 
 
-def test_scanned_needs_vlm(dataset: dict) -> None:
+async def test_scanned_needs_vlm(dataset: dict) -> None:
     group = _clean_group(dataset)
     scanned = degrade_pdf(_invoice_pdf(group, dataset), random.Random(3))
-    result = extract_document(scanned, "invoice")
+    result = await extract_document(scanned, "invoice")
     assert result.extract is None
     assert "vlm_required" in result.needs_review_fields
     assert result.route.kind == "scanned"
+

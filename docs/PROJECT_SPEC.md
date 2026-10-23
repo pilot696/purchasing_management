@@ -1478,6 +1478,10 @@ checks = [
 
 失败 → 把字段级错误摘要回填模型重试（≤2 次，D5），仍失败 → `extraction_record.status=needs_review`，前端黄色横幅列出"需人工确认的字段"，但**流程不中断**（用已抽到的字段继续匹配，缺失字段标 `unknown`）。
 
+> **repair 语义边界（v1.6）**：repair 只针对 **Schema/Pydantic 校验失败**（JSON 结构错、类型错、必填缺失）；
+> **业务校验失败**（无行项目、缺销售方、算术不平、税率非法）**不重试**——这类问题回填给模型只会诱发"编造"，
+> 应直接进 `needs_review_fields` 交人工/规则处理。实现见 `app/extraction/vlm.py::structured_vision_extract`。
+
 ### 7.3 抽取 Schema
 
 ```python
@@ -1861,7 +1865,7 @@ queued ──► running ──► awaiting_review ──► running ──► s
 | GET | `/documents/{id}/file` | 原件流（`Content-Disposition: inline`，供 PDF.js） |
 | GET | `/documents/{id}/page/{page}.png?dpi=140` | 页面渲染（PDF.js 不可用时的降级） |
 | GET | `/documents/{id}/annotations?line_ref=` | bbox 注解（抽屉高亮用） |
-| POST | `/documents/{id}/extract` | 单独重抽 → 202 `{run_id}` |
+| POST | `/documents/{id}/extract` | 同步抽取并落库（W1 已实现，返回 `{doc_id, record_id, summary, result}`）；W4 可升级为 202 + run |
 
 **Master Data**
 
@@ -2462,6 +2466,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-23 | v1.3 | 数据工厂落地（§10）：`build_dataset` 纯函数 + `persist_dataset` 落库；230 份 PDF（含 23 份扫描件）、120 份 M1 gold、80 组 M3 gold；异常槽位精确覆盖 §10.3 每类数量；`requires_gr` 驱动收货单生成 | W1-M3 第 1 步实现 |
 | 2026-10-23 | v1.4 | 数据口径修复（自查发现）：`text_ratio` 改为"每 1e3 pt² 字符数"并**将路由阈值从 0.6 标定为 0.15**（原生 PO 实测 0.435~0.509、发票 0.698~0.788、扫描件 0）；`doc.text_ratio` 列类型 numeric(6,4)；`po_line.qty_received` 由收货行汇总回填；PR gold 的 `over_budget` 与 verdict 统一由真实预算/规则推导，新增 block 样本 | W1-M3 开工前自查 |
 | 2026-10-23 | v1.5 | M3 抽取管线落地：`DocumentRouter` + `pdf_native`（**表格结构优先、正则兜底**）+ 校验器 + bbox 注解；`doc_annotation` 坐标明确为**左上原点归一化**；扫描件显式返回 `VLM_REQUIRED` 接缝 | W1-M3 第 2 步实现 |
+| 2026-10-23 | v1.6 | 扫描件 VLM 抽取接入（`VisionExtractor` 接缝 + OpenAI 兼容多模态消息 + Fake 实现）；**repair 只修 Schema、不修业务规则**；`extraction_record`/`doc_annotation` 落库与 `POST /documents/{id}/extract` 落地；抽取基线评测脚本 | W1-M3 第 3 步实现 |
 
 ---
 

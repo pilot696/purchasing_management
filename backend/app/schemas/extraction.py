@@ -110,6 +110,9 @@ class ExtractionResult(BaseModel):
     doc_type: DocType
     route: DocRoute
     extract: dict[str, Any] | None = None
+    extractor: str = "pdf_native"
+    repair_attempts: int = 0
+    structured_errors: list[str] = Field(default_factory=list)
     issues: list[ValidationIssue] = Field(default_factory=list)
     annotations: list[Annotation] = Field(default_factory=list)
     needs_review_fields: list[str] = Field(default_factory=list)

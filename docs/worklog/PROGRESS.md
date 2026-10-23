@@ -16,6 +16,27 @@
 
 ## 留痕记录（倒序追加，最新在上）
 
+### [2026-10-23 15:05] W1-M3 第 3 步：扫描件 VLM 路径 + 抽取落库 + 文档接口 + 基线评测
+- **变更文件**：
+  - 新增 `backend/app/extraction/{vlm,render_pages,persist}.py`、`backend/app/llm/multimodal.py`、`backend/app/api/v1/documents.py`、`backend/tests/{test_vlm_extraction,test_documents_api}.py`、`scripts/extract_eval.py`
+  - 修改 `backend/app/extraction/service.py`（async + vision 接缝 + hybrid 回退）、`backend/app/schemas/extraction.py`（`extractor/repair_attempts/structured_errors`）、`backend/app/llm/{types,provider}.py`（多模态 content）、`backend/app/api/deps.py`（SessionDep）、`backend/app/api/v1/__init__.py`
+- **GitNexus 影响面**：`app/llm/types.py::Message` 是**公共底座**（所有 LLM 调用共用），改动仅把 content 扩为 `str | list[dict]`，
+  `impact "Message"` 上下游为 gateway 与 extraction（W1）；`detect_changes` 结果见提交前记录。
+- **核心设计执行**：
+  - **VLM 接缝**：`VisionExtractor` Protocol；`FakeVisionExtractor`（零网络单测）+ `LLMVisionExtractor`（走网关 `vision` 角色，
+    qwen3.8-max → glm-5.3-flash 跨厂商降级）；`build_vision_messages` 生成 OpenAI 兼容 image data URL。
+  - **repair 语义分层**：Schema/Pydantic 失败 → 回填错误重试（`max_attempts=3`，即 2 次 repair）；
+    **业务校验失败（无行项目/缺销售方等）不重试**，直接进 `needs_review_fields` 交人工——避免把模型当规则引擎用。
+  - **落库**：`persist_extraction()` 幂等替换 `doc_annotation`，追加 `extraction_record`（extractor/status/repair_attempts/error），回写 `doc` 元数据。
+  - **接口**：`GET /documents/{id}`、`GET /documents/{id}/annotations`、`POST /documents/{id}/extract`（含路径越界防护）。
+  - **基线评测**：`scripts/extract_eval.py` 遍历全量文档，产出 `evals/extraction_baseline.json`。
+- **验证结果**：
+  - 单测：**53 passed / 9 skipped**（新增 VLM 5 条：扫描件抽取、repair 恢复、repair 耗尽、业务缺失→needs_review、PNG 渲染）
+  - 集成：**9 passed**（新增 documents API 3 条：原生发票抽取+注解、扫描件 needs_review、重复抽取注解幂等）
+  - **抽取基线（234 份文档）**：`pdf_native 204 / scanned 30`；contract ok 60、invoice ok 63 + needs_review 1、po ok 80；
+    **发票字段准确率 invoice_no / amount_tax_incl / seller_name = 100%（n=64）**；延迟 **p50 37ms / p95 43ms**
+- **下一步 (Next)**：normalizer（别名+规格抽取 → spec_bucket）→ align（L1/L2/L3 + 匈牙利）→ tolerance（含 `min(ordered, received)` 上限）→ matching_graph + HITL
+
 ### [2026-10-23 14:50] W1-M3 第 2 步：抽取管线（DocumentRouter + pdf_native + validators + bbox）
 - **变更文件**：新增 `backend/app/schemas/extraction.py`、`backend/app/extraction/{router,pdf_native,validators,service}.py`、`backend/tests/test_extraction.py`
 - **GitNexus 影响面**：纯新增模块；`app/schemas/extraction.py` 将成为 M3 图与 API 的公共类型（后续改字段需 impact）
