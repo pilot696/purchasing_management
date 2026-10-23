@@ -36,6 +36,7 @@ class _Handle:
     decision: str | None = None
     edits: list[dict[str, Any]] = field(default_factory=list)
     note: str | None = None
+    review_id: UUID | None = None
     task: asyncio.Task[None] | None = None
 
 
@@ -48,12 +49,14 @@ class RunService:
         step_delay_ms: int = 350,
         resume_timeout_s: float = 600,
         sleep=asyncio.sleep,
+        matching_graph: Any | None = None,
     ) -> None:
         self._bus = bus
         self._sf = session_factory
         self._step_delay_s = step_delay_ms / 1000
         self._resume_timeout_s = resume_timeout_s
         self._sleep = sleep
+        self._matching = matching_graph
         self._handles: dict[UUID, _Handle] = {}
 
     # ------------------------------------------------------------------ 生命周期
@@ -85,6 +88,10 @@ class RunService:
 
     async def _execute(self, handle: _Handle, module: str, subject: dict[str, Any]) -> None:
         run_id = handle.run_id
+        # M3 由 LangGraph 图驱动（W1 起）；M1/M2 仍走演示节点，W2/W3 替换
+        if module == "m3" and self._matching is not None:
+            await self._execute_m3(handle, subject)
+            return
         try:
             await self._set_status(run_id, "running")
             for node in DEMO_NODES:
@@ -154,6 +161,71 @@ class RunService:
             await self._bus.emit(run_id, "run.end", {"status": "cancelled"})
             raise
         except Exception as exc:  # noqa: BLE001 - 兜底转成可观测失败态，绝不静默
+            await self._fail(run_id, "RUN_FAILED", str(exc))
+        finally:
+            self._handles.pop(run_id, None)
+
+    async def _execute_m3(self, handle: _Handle, subject: dict[str, Any]) -> None:
+        """M3：LangGraph 跑到 compose_report 后挂起 → 人工决策 → 恢复 finalize（同一事务写会计事实）。"""
+        run_id = handle.run_id
+        config = {"configurable": {"thread_id": str(run_id)}}
+        try:
+            await self._set_status(run_id, "running")
+            state = await self._matching.ainvoke({"run_id": str(run_id), "subject": subject}, config)
+            report = state.get("report") or {}
+            review_id = uuid.uuid4()
+            review_payload = {
+                "kind": "release_or_hold",
+                "review_id": str(review_id),
+                "title": f"M3 三单匹配：{report.get('po_no')} ↔ {report.get('invoice_no')}",
+                "overall": report.get("overall"),
+                "summary": report.get("summary"),
+                "diffs": report.get("diffs", []),
+                "line_matches": report.get("line_matches", []),
+                "proposed_changes": report.get("proposed_changes", []),
+                "editable": False,
+                "subject": subject,
+            }
+            handle.review_id = review_id
+            async with self._sf() as session:
+                session.add(
+                    ReviewTask(
+                        id=review_id,
+                        run_id=run_id,
+                        kind="release_or_hold",
+                        payload=review_payload,
+                        status="pending",
+                    )
+                )
+                await session.commit()
+            await self._set_status(run_id, "awaiting_review")
+            await self._bus.emit(run_id, "interrupt", review_payload)
+
+            try:
+                await asyncio.wait_for(handle.resume_event.wait(), timeout=self._resume_timeout_s)
+            except TimeoutError:
+                await self._fail(run_id, "REVIEW_TIMEOUT", "等待人工复核超时")
+                return
+
+            await self._matching.aupdate_state(
+                config,
+                {
+                    "decision": handle.decision,
+                    "reviewer_note": handle.note,
+                    "review_id": str(review_id),
+                },
+            )
+            final_state = await self._matching.ainvoke(None, config)
+            await self._bus.emit(
+                run_id,
+                "run.end",
+                {"status": "succeeded", "artifact_id": final_state.get("artifact_id")},
+            )
+        except asyncio.CancelledError:  # pragma: no cover - 由 cancel() 触发
+            await self._set_status(run_id, "cancelled", finished=True)
+            await self._bus.emit(run_id, "run.end", {"status": "cancelled"})
+            raise
+        except Exception as exc:  # noqa: BLE001 - 兜底转成可观测失败态
             await self._fail(run_id, "RUN_FAILED", str(exc))
         finally:
             self._handles.pop(run_id, None)

@@ -392,6 +392,8 @@ class Invoice(Base):
     amount_tax_incl: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     doc_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("doc.id"))
     status: Mapped[str] = mapped_column(String(16), default="new")  # new|matched|hold|paid
+    # 发票备注（如"预付 50%"）：M3 terms_conflict 判定的输入，Spec §7.5
+    remark: Mapped[str | None] = mapped_column(Text)
 
 
 class InvoiceLine(Base):

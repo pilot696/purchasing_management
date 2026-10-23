@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.agents.matching import MatchingDeps, build_matching_graph
 from app.api.v1 import api_router
 from app.core.config import get_settings
 from app.core.errors import AppError, app_error_handler
@@ -36,10 +37,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     session_factory = get_session_factory()
     app.state.settings = settings
     app.state.bus = EventBus(session_factory)
+    # M3 图：load → normalize → align → reconcile → compose →（HITL）→ finalize
+    app.state.matching_graph = build_matching_graph(
+        MatchingDeps(bus=app.state.bus, session_factory=session_factory)
+    )
     app.state.runs = RunService(
         app.state.bus,
         session_factory,
         step_delay_ms=settings.demo_step_delay_ms,
+        matching_graph=app.state.matching_graph,
     )
     # 网关记账：每次 LLM 调用写 llm_call（P0 用 FakeLLM 也会留痕）
     get_router().recorder = LedgerRecorder(session_factory)

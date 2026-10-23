@@ -218,4 +218,21 @@
   normalizer 先匹配 `16G 512G` / `16G/512G` 成对模式，再对孤立 `NNNG` 做 ≥128→存储、<128→内存的兜底分类。
 - **防回归**：`extraction_baseline.json` 的 `scanned/docs` 比例；`test_matching.py::test_normalize_english_and_chinese_names_share_bucket`。
 
+## G-024｜DB 路径静默漏判 terms_conflict：`invoice.remark` 列缺失
+- **问题现象**：纯函数基线里 `terms_conflict` 100% 命中，但 LangGraph 从 DB 加载数据后，同一组三单的 `overall` 从 `hold` 变成 `pass`。
+- **根因定位**：付款条款冲突判定依赖发票备注（"预付 50%"），数据工厂/gold 里存在该字段，但 `invoice` 表**没有 remark 列**，
+  DB 路径读不到 → 差异静默消失（不是抛错，是"看起来正常"的错误，最危险）。
+- **修复手段**：`Invoice` 增加 `remark` 列 + Alembic 0002 迁移；种子 persist 写入 remark；图加载时透传。
+  另将图级测试的期望改为**读取同 case 的 gold 文件**，而不是硬编码（发现测试用例编号也错位过，见 G-025）。
+- **防回归**：`test_matching_graph.py::test_graph_interrupts_before_finalize_then_release_writes_accounting`
+  断言 `match_diff` 类型集合 == gold `expected_diffs` 类型集合。
+
+## G-025｜集成测试"硬编码期望"导致跨组配对：PO `i+1` vs 发票 `3000+i`
+- **问题现象**：图级测试用 `PO-2026-0001` + `INV-2026-3001` 组合，跑出来 `overall=pass`，与 gold 的 `hold` 不符。
+- **根因定位**：种子里 PO 编号是 `i+1`、发票编号是 `3000+i`，两个序列**整体错位一位**；测试把不同组的 PO 和发票配对，
+  行对齐自然对不上，判定结果与 gold 无关。纯函数基线用的是同一组内数据，所以没暴露。
+- **修复手段**：测试成对取 `(PO-2026-{i+1:04d}, INV-2026-{3000+i:04d}, m3-{i+1:04d})`；断言从 gold 文件动态读取；
+  对"已核销"的 PO 加 skip 守卫（重复跑集成测试不会因脏数据误判）。
+- **防回归**：`_gold(case_id)` 动态期望 + `m3-0001/0002/0003` 三组覆盖放行/挂起/RunService 全流程。
+
 <!-- 追加位置：新踩坑写在本行上方 -->

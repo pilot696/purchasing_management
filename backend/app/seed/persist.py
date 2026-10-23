@@ -490,6 +490,7 @@ async def persist_dataset(dataset: dict[str, Any], cfg: SeedConfig) -> dict[str,
                         "amount_tax_incl": invoice["amount_tax_incl"],
                         "doc_id": doc_id,
                         "status": "new",
+                        "remark": invoice.get("remark") or None,
                     }
                 )
                 for line in invoice["lines"]:

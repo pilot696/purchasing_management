@@ -16,6 +16,22 @@
 
 ## 留痕记录（倒序追加，最新在上）
 
+### [2026-10-23 15:50] W1-M3 第 5 步：matching_graph（LangGraph）+ HITL + finalize 事务
+- **变更文件**：新增 `backend/app/agents/{__init__,matching}.py`、`backend/alembic/versions/0002_invoice_remark.py`、`backend/tests/test_matching_graph.py`；修改 `backend/app/services/runs.py`（M3 按 module 分派图）、`backend/app/main.py`（装配图）、`backend/app/models/tables.py`（`invoice.remark`）、`backend/app/seed/persist.py`（写入 remark）
+- **GitNexus 影响面**：`RunService._execute` 增加 M3 分支、`_Handle` 增加 `review_id`；`main.py` lifespan 新增图装配；`Invoice` ORM 加列需迁移（0002），影响 persist/graph/文档接口读取。`detect_changes` 见提交记录。
+- **核心设计执行**：
+  - 图节点：`load_subject → normalize → align → reconcile → compose_report →（interrupt_before）→ finalize`，每节点发 `node.start/end`（llm_calls=0, tool_calls=0）；
+  - **决策前零会计写入**：`match_run/match_line/match_diff` 也统一放到 `finalize` 事务，避免挂起后残留半成品；
+  - **finalize 幂等**：以 `audit_log(target_table='match_run', run_id)` 是否存在判断，重入不重复累加 `qty_invoiced`；
+  - 放行写：`qty_invoiced`、尾差池、`invoice.status=matched`、`audit_log(release/update)`、`artifact(match_report)`、`agent_run.succeeded`；挂起写：`invoice.status=hold`、`audit_log(hold)`、`match_run.status=hold`；
+  - `RunService` 对 `module=m3` 用图驱动（M1/M2 仍走演示节点，W2/W3 替换）；checkpointer 用进程内 `MemorySaver`（限制已记入 Spec v1.8）。
+- **本轮修复的 schema 缺口**：`invoice` 表没有 `remark`，导致 DB 路径下 `terms_conflict` 静默漏判（GOTCHAS G-024）；新增列 + Alembic 0002 + 种子/图同步。
+- **验证结果**：
+  - 新增图级集成测试 **3 passed**：①放行→`qty_invoiced`/审计/`match_diff` 集合与 gold 一致/artifact；②挂起→会计零写入 + `invoice.status=hold`；③`RunService` 全流程（start→awaiting_review→resume→succeeded）
+  - 全量：unit **66 passed / 12 skipped**；integration **11 passed / 1 skipped**（重复运行防脏数据 skip）
+  - 迁移与重灌：`alembic upgrade head` 成功（0002），`seed.py --seed 42` 成功
+- **下一步 (Next)**：M3 前端（对齐表 + PDF 抽屉 + bbox 高亮 + 差异徽标 + HITL 放行弹层）→ W2 M1（规则 DSL/检索/预检图）
+
 ### [2026-10-23 15:30] W1-M3 第 4 步：normalizer + align（匈牙利）+ tolerance/reconcile + M3 基线
 - **变更文件**：新增 `backend/app/matching/{normalize,align,tolerance}.py`、`data/aliases.yaml`、`backend/tests/test_matching.py`、`scripts/m3_eval.py`、`evals/m3_baseline.json`；修改 `backend/app/seed/dataset.py`（扫描件精确配额、到货不足仅限 qty_over 组、terms_conflict 强制有合同、date_overdue 日期倒推）
 - **GitNexus 影响面**：`matching/*` 为新增纯函数层；`normalize`/`align` 将被 matching_graph 与 W2 检索复用；`dataset.py` 改动仅影响数据工厂输出与 gold（已重跑两套基线）

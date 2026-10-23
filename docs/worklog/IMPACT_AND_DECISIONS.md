@@ -12,6 +12,18 @@
 
 ## 决策记录（倒序追加，最新在上）
 
+### ADR-018｜M3 用 LangGraph 图驱动 + finalize 单事务 + audit_log 幂等
+- **触发原因**：W1 要求把 P0 的假节点序列换成真实图；M3 必须严格满足"HITL 前不写会计事实"与"同一 run 重入不重复核销"。
+- **GitNexus impact**：`RunService._execute`（新增 M3 分支）上游是 `/runs` API 与 `main.py` lifespan；
+  `Invoice` ORM 加列影响 seed persist、documents 抽取落库与图加载；`detect_changes` 见提交记录。
+- **最终方案**：
+  1. `StateGraph + interrupt_before=["finalize"]`，checkpointer 用 `MemorySaver`（同进程 resume；生产换 `PostgresSaver`，限制写入 Spec v1.8）；
+  2. `load_subject` 一次读齐 PO/发票/合同/收货/容差/品类 `requires_gr`，后续节点纯计算；
+  3. **所有落库集中在 finalize 单事务**（match_run/match_line/match_diff、qty_invoiced、尾差池、invoice.status、audit_log、artifact、run 状态）；
+  4. 幂等以 `audit_log(target_table='match_run')` 存在性判断，天然与"审计即事实"一致；
+  5. 图级测试断言改为读 gold 文件动态比较，避免硬编码错位（G-025）。
+- **同步更新 Spec**：§3.4 `invoice.remark`、§4.6 M3 实现口径 + 已知限制、§13.3 v1.8。
+
 ### ADR-017｜匹配层保持"纯函数 + 分析先行"，匈牙利用于全局指派
 - **触发原因**：M3 是三单状态机，必须让每行判定可溯源、可单测、可回放；且 HITL 前不得写会计事实。
 - **GitNexus impact**：`matching/*` 为新增层（无既有上游），将成为 `matching_graph` 节点与 W2 检索的公共依赖；

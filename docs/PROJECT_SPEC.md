@@ -411,7 +411,7 @@ FROM w;    -- 注：percentile_cont 为等权分位数；时间衰减加权分�
 | `po_line` | id, po_id, line_no, sku_id, item_desc, spec_bucket, qty_ordered, qty_received, qty_invoiced, unit_price_tax_excl, tax_rate, amount_tax_excl, amount_tax_incl, promised_date | **分批核销的核心：`qty_invoiced` 累加** |
 | `goods_receipt` | id, po_id, received_at, doc_id | 收货单 |
 | `receipt_line` | id, receipt_id, po_line_id, qty, qc_result(`pass/fail/partial`), defect_note | 质检结果驱动 M2 质量维度 |
-| `invoice` | id, invoice_no, invoice_code, supplier_id, invoice_date, amount_tax_excl, tax_amount, amount_tax_incl, doc_id, status(`new/matched/hold/paid`) | |
+| `invoice` | id, invoice_no, invoice_code, supplier_id, invoice_date, amount_tax_excl, tax_amount, amount_tax_incl, doc_id, status(`new/matched/hold/paid`), remark（v1.8，付款条款冲突判定输入） | |
 | `invoice_line` | id, invoice_id, line_no, item_desc, spec_bucket, qty, unit_price_tax_excl, tax_rate, amount_tax_excl, amount_tax_incl | |
 
 ### 3.5 文档与抽取
@@ -802,6 +802,10 @@ POST /api/v1/runs/{run_id}/resume
 规则：`review_task` 状态机 `pending→(accepted|rejected|edited)`，**幂等**（同 review_id 重复提交返回 409 `REVIEW_ALREADY_DECIDED`）；`edit` 时前端提交的 patch 必须经服务端 schema 校验与权限校验（requester 只能改自己 PR 的字段）；决策写入 `audit_log` 与 `review_task` 审计字段，`agent_run` 从 `awaiting_review` 恢复。
 
 **写入边界（硬约束）**：断点之前只允许持久化"**分析结果**"（findings、patch 建议、`match_line`、`match_diff`），**不得写入"会计/业务事实"**（`po_line.qty_invoiced`、`tail_diff_pool`、`invoice.status`、`pr_item.spec`）。所有业务写操作集中到各图的 `apply` / `finalize` 节点，且在用户决策之后、单事务内完成。原因：财务一旦选择"挂起"，数据库不能残留"已核销"的中间态。
+
+> **M3 实现口径（v1.8）**：`matching_graph` 用 `StateGraph + interrupt_before=["finalize"]`；最终写操作（`match_run/match_line/match_diff`、`qty_invoiced`、尾差池、`invoice.status`、`audit_log`、`artifact`）全部在 `finalize` 单事务完成。
+> **幂等**：同一 `run_id` 重入 `finalize` 时以 `audit_log(target_table='match_run')` 是否存在为准，不重复累加 `qty_invoiced`。
+> **已知限制**：checkpointer 当前用进程内 `MemorySaver`（`RunService` 同进程 resume），重启后不能恢复中断运行；生产化时换 `PostgresSaver`（Spec §4.5 已预留）。M3 当前按**单张发票/次运行**处理，多发票批量在 W2 扩展。
 
 ### 4.7 可观测性
 
@@ -2472,6 +2476,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-23 | v1.4 | 数据口径修复（自查发现）：`text_ratio` 改为"每 1e3 pt² 字符数"并**将路由阈值从 0.6 标定为 0.15**（原生 PO 实测 0.435~0.509、发票 0.698~0.788、扫描件 0）；`doc.text_ratio` 列类型 numeric(6,4)；`po_line.qty_received` 由收货行汇总回填；PR gold 的 `over_budget` 与 verdict 统一由真实预算/规则推导，新增 block 样本 | W1-M3 开工前自查 |
 | 2026-10-23 | v1.5 | M3 抽取管线落地：`DocumentRouter` + `pdf_native`（**表格结构优先、正则兜底**）+ 校验器 + bbox 注解；`doc_annotation` 坐标明确为**左上原点归一化**；扫描件显式返回 `VLM_REQUIRED` 接缝 | W1-M3 第 2 步实现 |
 | 2026-10-23 | v1.7 | M3 匹配层落地：`normalizer`（别名词典 + 规格抽取 → `spec_bucket`）、`align`（L1/L2/L3 + 匈牙利 + 贪心消融）、`tolerances`（`min(ordered, received)` 上限 + 尾差基准 + 金额去重）；扫描件改为**精确配额**分配；M3 基线：overall 100%、6 类 diff F1 100%、行对齐 F1 100% | W1-M3 第 4 步实现 |
+| 2026-10-23 | v1.8 | M3 `matching_graph`（LangGraph：load→normalize→align→reconcile→compose→interrupt→finalize）+ HITL + finalize 单事务/幂等；`invoice.remark` 列（alembic 0002，terms_conflict 判定输入）；RunService 按 module 分派图；图级集成测试 3 条（放行/挂起/RunService 全流程） | W1-M3 第 5 步实现 |
 
 ---
 
