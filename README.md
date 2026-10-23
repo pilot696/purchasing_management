@@ -169,10 +169,11 @@ docs/RESUME_TEMPLATE.md   简历模板（匿名占位 + STAR 数字 + 面试口�
 docs/screens/             7 张实拍截图（Run 中心/M1/M2/M3/规则/可观测/设计稿）
 docs/worklog/       三份开发留痕（PROGRESS / IMPACT_AND_DECISIONS / GOTCHAS）
 evals/              基线 JSON（extraction/m1/m2/m3 + latest 汇总 + real_llm_smoke）
-scripts/            seed、四套 eval、四套 e2e smoke、demo_runs、screenshots、设计稿生成、dev.ps1
+scripts/            seed、四套 eval、eval_report（聚合 latest.json）、四套 e2e smoke、demo_runs、screenshots、设计稿生成、dev.ps1
 Dockerfile          多阶段镜像（Node 构建前端 → Python 运行时同端口托管）
 docker-compose.yml  PostgreSQL 16 + pgvector + api（迁移自动执行 + healthcheck）
 Makefile            CI/Linux 入口（up-app / seed-docker / eval / design 等）
+.github/workflows/   CI：后端离线单测 + 前端 typecheck/test/build（不依赖 DB）
 ```
 
 ## 关键设计约束（详见 Spec）
@@ -181,6 +182,7 @@ Makefile            CI/Linux 入口（up-app / seed-docker / eval / design 等�
 2. **证据可追溯**：每条 finding/risk 必须带 `evidence`，引用必须能在库中命中。
 3. **HITL 边界**：中断前只写"分析结果"，会计/业务事实只在 `finalize` 且用户决策后提交。
 4. **可观测**：每次 LLM 调用写 `llm_call`，每个节点写 `run_event`，UI 可回放。
+
 
 
 
