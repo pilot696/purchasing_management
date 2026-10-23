@@ -1,8 +1,8 @@
-﻿import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { getDemoRole, getRunSnapshot, resumeRun, startRun } from "../lib/api";
+import { getDemoRole, getRunSnapshot, getSupplier, listSuppliers, resumeRun, startRun } from "../lib/api";
 import { isTerminal } from "../lib/events";
 import {
   asM2Report,
@@ -58,6 +58,13 @@ export default function Supplier() {
     queryFn: () => getRunSnapshot(runId as string),
     enabled: Boolean(runId) && isTerminal(run.status),
   });
+  const supplierDirectory = useQuery({ queryKey: ["suppliers"], queryFn: () => listSuppliers() });
+  const supplierDetail = useQuery({
+    queryKey: ["supplier", supplierCode],
+    queryFn: () => getSupplier(supplierCode),
+    enabled: Boolean(supplierCode.trim()),
+    retry: false,
+  });
 
   const report = useMemo(() => {
     const fromReview = asM2Report(review?.report);
@@ -110,6 +117,93 @@ export default function Supplier() {
           </div>
         )}
       </div>
+
+      <section className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">
+            供应商目录
+            {supplierDirectory.data ? `（${supplierDirectory.data.total}）` : ""}
+          </h2>
+          <span className="text-[11px] text-[var(--text-muted)]">点击行切换供应商；右侧为最近评估历史</span>
+        </div>
+        <div className="mt-2 grid gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="max-h-64 overflow-auto rounded-lg border border-[var(--border-default)]">
+            <table className="w-full text-left text-[12px]">
+              <thead className="sticky top-0 bg-[var(--bg-subtle)] text-[11px] text-[var(--text-secondary)]">
+                <tr>
+                  <th className="px-2 py-1.5">编码</th>
+                  <th className="px-2 py-1.5">名称</th>
+                  <th className="px-2 py-1.5">状态</th>
+                  <th className="px-2 py-1.5">最近结论</th>
+                  <th className="px-2 py-1.5">总分</th>
+                  <th className="px-2 py-1.5">评估数</th>
+                </tr>
+              </thead>
+              <tbody>
+                {supplierDirectory.isLoading && (
+                  <tr>
+                    <td colSpan={6} className="px-2 py-2 text-[var(--text-muted)]">
+                      加载中…
+                    </td>
+                  </tr>
+                )}
+                {supplierDirectory.data?.items.map((item) => (
+                  <tr
+                    key={item.code}
+                    onClick={() => setSupplierCode(item.code)}
+                    className={`cursor-pointer border-t border-[var(--border-default)] hover:bg-[var(--bg-subtle)] ${
+                      item.code === supplierCode ? "bg-[var(--bg-subtle)] font-medium" : ""
+                    }`}
+                  >
+                    <td className="px-2 py-1.5">{item.code}</td>
+                    <td className="max-w-48 truncate px-2 py-1.5">{item.name}</td>
+                    <td className="px-2 py-1.5">{item.status}</td>
+                    <td className="px-2 py-1.5">{item.latest_eval?.verdict ?? "—"}</td>
+                    <td className="px-2 py-1.5">{item.latest_eval?.total ?? "—"}</td>
+                    <td className="px-2 py-1.5">{item.eval_count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="rounded-lg border border-[var(--border-default)] p-3 text-[12px]">
+            {supplierDetail.isError && <p className="text-[var(--danger)]">供应商不存在或加载失败。</p>}
+            {supplierDetail.data && (
+              <>
+                <div className="font-semibold">
+                  {supplierDetail.data.code} · {supplierDetail.data.name}
+                </div>
+                <div className="mt-1 text-[11px] text-[var(--text-secondary)]">
+                  状态 {supplierDetail.data.status} · 评估 {supplierDetail.data.eval_count} 次
+                </div>
+                {supplierDetail.data.latest_eval ? (
+                  <div className="mt-2 rounded bg-[var(--bg-subtle)] p-2">
+                    最近：<b>{supplierDetail.data.latest_eval.verdict}</b> · 总分{" "}
+                    {supplierDetail.data.latest_eval.total ?? "—"} · 置信度{" "}
+                    {supplierDetail.data.latest_eval.confidence}
+                  </div>
+                ) : (
+                  <div className="mt-2 text-[var(--text-muted)]">暂无历史评估，可发起一次 M2。</div>
+                )}
+                <div className="mt-2 space-y-1">
+                  {supplierDetail.data.evals.slice(0, 6).map((item) => (
+                    <div key={item.id} className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+                      <span className="w-10 shrink-0">{item.total ?? "—"}</span>
+                      <span className="h-1.5 flex-1 rounded bg-[var(--bg-subtle)]">
+                        <span
+                          className="block h-1.5 rounded bg-[var(--brand-primary)]"
+                          style={{ width: `${Math.max(0, Math.min(100, item.total ?? 0))}%` }}
+                        />
+                      </span>
+                      <span className="w-14 shrink-0 text-right">{item.verdict}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </section>
 
       <section className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4">
         <div className="flex flex-wrap items-end gap-3">

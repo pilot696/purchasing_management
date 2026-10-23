@@ -27,6 +27,8 @@ from app.models.tables import (
     ReviewTask,
     Rule,
     RunEvent,
+    Supplier,
+    SupplierEval,
     TolerancePolicy,
 )
 from app.observability.runevents import EventBus
@@ -58,6 +60,21 @@ def _run_item(run: AgentRun, review: ReviewTask | None = None) -> dict[str, Any]
         "error": run.error,
         "pending_review_id": review.id if review else None,
         "pending_review_kind": review.kind if review else None,
+    }
+
+
+def _supplier_eval_item(row: Any) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "run_id": row.run_id,
+        "mode": row.mode,
+        "total": float(row.total) if row.total is not None else None,
+        "verdict": row.verdict,
+        "confidence": row.confidence,
+        "gate_hits": list(row.gate_hits or []),
+        "dimensions": list(row.dimensions or []),
+        "weight_version": row.weight_version,
+        "created_at": row.created_at,
     }
 
 
@@ -685,6 +702,104 @@ class RunService:
             "cache_hit_rate": round(cache_hits / len(calls), 4) if calls else None,
         }
 
+    async def list_suppliers(
+        self,
+        *,
+        q: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        conditions = []
+        if q:
+            conditions.append(Supplier.code.ilike(f"%{q}%") | Supplier.name.ilike(f"%{q}%"))
+        if status:
+            conditions.append(Supplier.status == status)
+        async with self._sf() as session:
+            total = int(await session.scalar(select(func.count()).select_from(Supplier).where(*conditions)) or 0)
+            suppliers = (
+                await session.scalars(
+                    select(Supplier).where(*conditions).order_by(Supplier.code).limit(limit).offset(offset)
+                )
+            ).all()
+            supplier_ids = [supplier.id for supplier in suppliers]
+            evals = (
+                await session.scalars(
+                    select(SupplierEval)
+                    .where(SupplierEval.supplier_id.in_(supplier_ids))
+                    .order_by(SupplierEval.created_at.desc())
+                )
+            ).all() if supplier_ids else []
+        by_supplier: dict[Any, list[Any]] = {}
+        for row in evals:
+            by_supplier.setdefault(row.supplier_id, []).append(row)
+        items = []
+        for supplier in suppliers:
+            history = by_supplier.get(supplier.id, [])
+            items.append(
+                {
+                    "code": supplier.code,
+                    "name": supplier.name,
+                    "status": supplier.status,
+                    "category_scope": list(supplier.category_scope or []),
+                    "onboarded_at": supplier.onboarded_at,
+                    "risk_flags": dict(supplier.risk_flags or {}),
+                    "latest_eval": _supplier_eval_item(history[0]) if history else None,
+                    "eval_count": len(history),
+                }
+            )
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+    async def supplier_detail(self, code: str) -> dict[str, Any]:
+        async with self._sf() as session:
+            supplier = await session.scalar(select(Supplier).where(Supplier.code == code))
+            if supplier is None:
+                raise RunNotFound("供应商不存在", details={"supplier_code": code})
+            evals = (
+                await session.scalars(
+                    select(SupplierEval)
+                    .where(SupplierEval.supplier_id == supplier.id)
+                    .order_by(SupplierEval.created_at.desc())
+                    .limit(20)
+                )
+            ).all()
+        history = [_supplier_eval_item(row) for row in evals]
+        return {
+            "code": supplier.code,
+            "name": supplier.name,
+            "status": supplier.status,
+            "category_scope": list(supplier.category_scope or []),
+            "onboarded_at": supplier.onboarded_at,
+            "risk_flags": dict(supplier.risk_flags or {}),
+            "latest_eval": history[0] if history else None,
+            "eval_count": len(history),
+            "evals": history,
+        }
+
+    async def review_detail(self, review_id: UUID) -> dict[str, Any]:
+        async with self._sf() as session:
+            review = await session.get(ReviewTask, review_id)
+            if review is None:
+                raise RunNotFound("复核任务不存在", details={"review_id": str(review_id)})
+            run = await session.get(AgentRun, review.run_id)
+            if run is None:
+                raise RunNotFound("运行不存在", details={"run_id": str(review.run_id)})
+        preview = _review_preview(review.kind, review.payload or {})
+        return {
+            "id": review.id,
+            "run_id": review.run_id,
+            "kind": review.kind,
+            "status": review.status,
+            "created_at": review.created_at,
+            "run_module": run.module,
+            "run_status": run.status,
+            "subject_ref": run.subject_ref or {},
+            "verdict": preview["verdict"],
+            "summary": preview["summary"],
+            "details": preview["details"],
+            "payload": review.payload or {},
+        }
+
     async def rule_catalog(self, *, category_code: str | None = None) -> dict[str, Any]:
         async with self._sf() as session:
             categories = (await session.scalars(select(CategoryTemplate).order_by(CategoryTemplate.category_code))).all()
@@ -753,6 +868,7 @@ class RunService:
                 for policy in tolerances
             ],
         }
+
 
 
 

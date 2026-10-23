@@ -21,6 +21,12 @@ async def get_summary(service: RunServiceDep) -> ObservabilitySummary:
     return ObservabilitySummary(**await service.observability_summary())
 
 
+@router.get("/metrics/overview", response_model=ObservabilitySummary)
+async def get_metrics_overview(service: RunServiceDep) -> ObservabilitySummary:
+    """Spec §8.3 的 /metrics/overview 兼容别名（与 /observability/summary 同源）。"""
+    return ObservabilitySummary(**await service.observability_summary())
+
+
 @router.get("/observability/evals", response_model=EvalSnapshotResponse)
 async def get_evals() -> EvalSnapshotResponse:
     if not EVALS_PATH.exists():
@@ -36,3 +42,4 @@ async def get_evals() -> EvalSnapshotResponse:
         seed=data.get("seed"),
         data=data,
     )
+

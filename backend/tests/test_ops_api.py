@@ -88,3 +88,48 @@ async def test_rules_catalog_and_observability_summary() -> None:
         evals = await client.get("/api/v1/observability/evals")
         assert evals.status_code == 200
         assert evals.json()["available"] is True
+
+
+async def test_supplier_directory_and_detail() -> None:
+    await _require_data()
+    async with _client() as client:
+        listing = await client.get("/api/v1/suppliers", params={"limit": 5})
+        assert listing.status_code == 200, listing.text
+        payload = listing.json()
+        assert payload["total"] >= 30
+        assert len(payload["items"]) == 5
+        first = payload["items"][0]
+        assert {"code", "name", "status", "latest_eval", "eval_count"} <= set(first)
+
+        detail = await client.get("/api/v1/suppliers/SUP-001")
+        assert detail.status_code == 200, detail.text
+        body = detail.json()
+        assert body["code"] == "SUP-001"
+        assert isinstance(body["evals"], list)
+        assert body["eval_count"] == len(body["evals"])
+
+        missing = await client.get("/api/v1/suppliers/SUP-NOT-EXIST")
+        assert missing.status_code == 404
+
+
+async def test_metrics_overview_alias_matches_summary() -> None:
+    await _require_data()
+    async with _client() as client:
+        summary = (await client.get("/api/v1/observability/summary")).json()
+        overview = (await client.get("/api/v1/metrics/overview")).json()
+        assert overview == summary
+
+
+async def test_review_detail_matches_inbox_shape() -> None:
+    await _require_data()
+    async with get_session_factory()() as session:
+        review_id = await session.scalar(select(t.ReviewTask.id).limit(1))
+    if review_id is None:
+        pytest.skip("没有复核任务：先运行 demo_runs.py 或 e2e smoke")
+    async with _client() as client:
+        response = await client.get(f"/api/v1/reviews/{review_id}")
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert {"id", "run_id", "kind", "status", "run_module", "payload", "verdict"} <= set(body)
+        missing = await client.get("/api/v1/reviews/00000000-0000-0000-0000-000000000000")
+        assert missing.status_code == 404

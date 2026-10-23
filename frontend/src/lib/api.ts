@@ -347,3 +347,46 @@ export async function getRules(category?: string): Promise<RuleCatalog> {
   if (!response.ok) throw await asError(response);
   return (await response.json()) as RuleCatalog;
 }
+
+
+export interface SupplierEvalItem {
+  id: string;
+  run_id: string;
+  mode: string;
+  total: number | null;
+  verdict: string;
+  confidence: string;
+  gate_hits: Array<Record<string, unknown>>;
+  dimensions: Array<Record<string, unknown>>;
+  weight_version: string | null;
+  created_at: string | null;
+}
+
+export interface SupplierListItem {
+  code: string;
+  name: string;
+  status: string;
+  category_scope: string[];
+  onboarded_at: string | null;
+  risk_flags: Record<string, unknown>;
+  latest_eval: SupplierEvalItem | null;
+  eval_count: number;
+}
+
+export interface SupplierDetail extends SupplierListItem {
+  evals: SupplierEvalItem[];
+}
+
+export async function listSuppliers(q?: string): Promise<{ items: SupplierListItem[]; total: number }> {
+  const query = q ? `?q=${encodeURIComponent(q)}` : "";
+  const response = await fetch(`/api/v1/suppliers${query}`, { headers: headers() });
+  if (!response.ok) throw await asError(response);
+  return (await response.json()) as { items: SupplierListItem[]; total: number };
+}
+
+export async function getSupplier(code: string): Promise<SupplierDetail> {
+  const response = await fetch(`/api/v1/suppliers/${encodeURIComponent(code)}`, { headers: headers() });
+  if (!response.ok) throw await asError(response);
+  return (await response.json()) as SupplierDetail;
+}
+

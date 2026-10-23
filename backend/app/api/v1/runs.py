@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 
 from app.api.deps import BusDep, RoleDep, RunServiceDep, require_module_role
 from app.core.config import get_settings
+from app.schemas.catalog import ReviewDetail
 from app.schemas.runs import (
     ResumeRequest,
     ReviewInboxItem,
@@ -144,6 +145,11 @@ async def list_reviews(service: RunServiceDep) -> list[ReviewInboxItem]:
     return [ReviewInboxItem(**item) for item in await service.list_review_inbox()]
 
 
+@router.get("/reviews/{review_id}", response_model=ReviewDetail)
+async def get_review(review_id: UUID, service: RunServiceDep) -> ReviewDetail:
+    return ReviewDetail(**await service.review_detail(review_id))
+
+
 @router.post("/reviews/{review_id}/decision")
 async def decide_review(
     review_id: UUID,
@@ -161,3 +167,4 @@ async def decide_review(
         note=body.note,
     )
     return {"run_id": str(run_id), "status": "running"}
+
