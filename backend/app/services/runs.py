@@ -51,6 +51,7 @@ class RunService:
         sleep=asyncio.sleep,
         matching_graph: Any | None = None,
         precheck_graph: Any | None = None,
+        supplier_graph: Any | None = None,
     ) -> None:
         self._bus = bus
         self._sf = session_factory
@@ -59,6 +60,7 @@ class RunService:
         self._sleep = sleep
         self._matching = matching_graph
         self._precheck = precheck_graph
+        self._supplier = supplier_graph
         self._handles: dict[UUID, _Handle] = {}
 
     # ------------------------------------------------------------------ 生命周期
@@ -90,8 +92,8 @@ class RunService:
 
     async def _execute(self, handle: _Handle, module: str, subject: dict[str, Any]) -> None:
         run_id = handle.run_id
-        # M1/M3 由 LangGraph 图驱动；M2 仍走演示节点，W3 替换
-        graph = self._matching if module == "m3" else self._precheck if module == "m1" else None
+        # M1/M2/M3 均由 LangGraph 图驱动（M2 的闸门命中路径会跳过 LLM）
+        graph = {"m1": self._precheck, "m2": self._supplier, "m3": self._matching}.get(module)
         if graph is not None:
             await self._execute_graph(handle, subject, graph)
             return
@@ -408,3 +410,4 @@ class RunService:
             if run is None:
                 raise RunNotFound(details={"run_id": str(run_id)})
             return run.status
+

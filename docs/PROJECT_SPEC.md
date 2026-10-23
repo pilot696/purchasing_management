@@ -1413,6 +1413,12 @@ class SupplierEvalResult(BaseModel):
 | 敏感性翻转率 | `flip_rate`（越低结论越稳） | — |
 | 成本/家 | ¥/supplier | 纯 LLM 打分 |
 
+> **W3 实现口径（v1.12，ADR-022）**：`supplier_graph` 已落地（`app/agents/supplier.py`），纯函数评分在 `app/scoring/supplier.py`：
+> ①闸门否决短路（跳过评分/LLM），G2/G6 仅条件项；②五维公式 + `supplier_weight` 品类权重；③300 次权重扰动敏感性（seed=42）；
+> ④LLM 复核者 schema 无分数字段，`evidence_refs` 后置校验；⑤finalize 单事务写 `supplier_eval`+artifact+audit。
+> 离线基线 `scripts/m2_eval.py`（30 家供应商）：闸门检出 100%、误报 0%、冷启动一致 100%、flip_rate 5.55%；
+> 数据工厂暂无 M2 专家标注 gold，故以"注入异常契约"评测，接入真实模型后再补 MAE/风险点 recall/幻觉引用率。
+
 ---
 
 ## 7. M3 — 合同 / PO / 发票三单匹配 Agent
@@ -2496,6 +2502,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-23 | v1.9 | M3 前端落地（对齐表 + 差异清单 + HITL 放行/挂起 + 服务端 PNG PDF 抽屉 + bbox 覆盖层）；M3 报告补齐 `documents/po_lines/invoice_lines` 字段；新增 `GET /documents/{id}/file`、`/page.png`；`scripts/smoke_m3.py` 端到端冒烟 | W1-M3 第 6 步 + 前端 |
 | 2026-10-23 | v1.10 | W2-M1 后端落地：规则 DSL（JSONLogic 白名单 + `required`/`fn` 算子）、混合检索（词法/精确/结构化 + RRF，向量 leg 待 embed）、`precheck_graph`（五节点 + 自动放行 + 补丁 finalize）、`scripts/m1_eval.py` 基线（verdict/findings 100%、检索 top-1 100%）、`scripts/smoke_m1.py`；数据工厂规则与 gold 对齐（17 条规则） | W2-M1 第 1~3 步实现 |
 | 2026-10-23 | v1.11 | M1 前端工作台落地（`/precheck`：结论横幅 + 预算条 + 字段/规格与检索候选 + findings + 补丁采纳 + 自动放行提示，RunCenter 跳转）；前端 32 单测、构建通过 | W2-M1 第 4 步实现 |
+| 2026-10-23 | v1.12 | W3-M2 落地：`supplier_graph`（6 硬闸门短路 + 五维确定性评分 + 权重敏感性 + LLM 复核者 + HITL + finalize 单事务）、`app/scoring/supplier.py` 纯函数、M2 前端供应商看板（闸门条 + SVG 雷达 + 维度明细 + LLM 风险卡）、`scripts/m2_eval.py` 离线基线（30 家：闸门 100%/误报 0%/冷启动 100%/flip 5.55%）、`scripts/smoke_m2.py`；seed 证照基准有效期与闸门标记契约修复 | W3-M2 第 1~5 步实现 |
 
 ---
 

@@ -295,4 +295,32 @@
 - **修复手段**：demo 冒烟改走仍是占位路径的 `module=m2` + supplier subject；真实 M1 链路由 `smoke_m1.py` 覆盖。
 - **防回归**：`scripts/smoke_e2e.py`（SSE/中断/恢复）、`scripts/smoke_m1.py`（真实 M1）、`scripts/smoke_m3.py`（真实 M3）三件套。
 
+## G-034｜M2 证照"随机过期"造成 G1 误杀：种子基准日选在 2025-12-31
+- **问题现象**：M2 首次评测 30 家里 8 家被 G1 否决，明细里却没有 `license_invalid` 标记，结论分布直接塌成 0 家 approve。
+- **根因定位**：证照生成 `valid_to = 2025-12-31 + rand(30..900)`，在"当前日期 2026-10"下约 30% 的营业执照已过期——
+  数据工厂的随机性越过了业务契约（本应只有 expiring 集合刻意临期）。
+- **修复手段**：基准日改为 `2027-12-31 + rand(30..900)`，仅 expiring 集合写 2026-11-01；重跑 seed 与 M2 基线。
+- **防回归**：`scripts/m2_eval.py` 的闸门误报率（0%）+ `test_scoring.py::test_expired_license_gate`（显式过期才命中）。
+
+## G-035｜M2 闸门短路路径的 `llm_status` 默认值不对
+- **问题现象**：G1 命中直接 reject 的 run，report 里 `llm_status="unavailable"`，前端会误显示"LLM 未配置"，而不是"闸门命中跳过"。
+- **根因定位**：gate_check → compose_result 的条件边绕过了 llm 节点，`state.get("llm_status", "unavailable")` 取默认值；
+  `"skipped_gate_hit"` 只写在 llm 节点内部，没被短路路径覆盖。
+- **修复手段**：compose 时按 `gate_veto` 推导：`state.get(...) or ("skipped_gate_hit" if veto else "unavailable")`。
+- **防回归**：`test_supplier_graph.py::test_gate_hit_short_circuits_and_finalize_writes_eval`（断言 skipped_gate_hit + dimensions=[]）。
+
+## G-036｜冷启动置信度没强制 low：pending 供应商算出 medium/high
+- **问题现象**：冷启动供应商（无历史）report 里 confidence=medium/high，违反 Spec §6.5"没有历史数据的 85 分是假的"。
+- **根因定位**：`confidence()` 只按 completeness/sample/freshness 公式算；pending 供应商在外卖历史表里仍有行（数据工厂循环分配），
+  公式结果客观"高"，但业务上尚未准入，必须强制降级。
+- **修复手段**：`aggregate_metrics` 在 `cold_start=True` 时覆盖 `level="low"` 且 `value≤0.49`；结论由 `verdict_for(cold_start=True)` 强制 conditional；条件附 3 个月试用期 + 首单 100% 抽检。
+- **防回归**：`test_supplier_graph.py::test_cold_start_forced_conditional_low_confidence`、`scripts/m2_eval.py` 的 cold_start 一致率（100%）。
+
+## G-037｜评测脚本把 `risk_flags` 里值为 False 的键当"预期闸门"
+- **问题现象**：M2 评测闸门召回率只有 58.9%，missing 列表里每个闸门供应商都缺 5 个"别的闸门"；误报率也被算成 16.7%。
+- **根因定位**：seed 的 gate 供应商写的是完整字典 `{license_invalid: idx==3, dishonest_judgment: idx==7, ...}`（其余为 False）；
+  评测用 `for flag in risk_flags if flag in FLAG_TO_GATE` 把 False 也计入 expected——"标记存在 ≠ 标记为真"。
+- **修复手段**：expected 只取 `value` 为真的键；误报改为"无 veto 预期却出现 veto 闸门"（并与冷启动/条件项区分）。
+- **防回归**：`scripts/m2_eval.py` 输出 gate_detection.recall=100%、false_positive_rate=0、extra_hits=0。
+
 <!-- 追加位置：新踩坑写在本行上方 -->

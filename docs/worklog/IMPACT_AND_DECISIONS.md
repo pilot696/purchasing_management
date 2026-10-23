@@ -12,6 +12,18 @@
 
 ## 决策记录（倒序追加，最新在上）
 
+### ADR-022｜M2 图：闸门短路 + 纯函数评分 + LLM 只写叙述 + 离线降级
+- **触发原因**：Spec §6 要求"分数由公式算、闸门由规则判、叙述由模型写"，且闸门命中不得让 LLM 有机会美化否决项。
+- **GitNexus impact**：`RunService` 上游 4 个文件（main/api deps/runs/api init），risk **LOW**；`supplier_graph` 新增不影响既有 M1/M3 图；
+  `seed/dataset.py` 证照与闸门标记变更影响 M2 基线与 e2e。
+- **最终方案**：
+  1. `app/scoring/supplier.py` 全部纯函数（piecewise/price/delivery/quality/service/compliance/weights/verdict/confidence/sensitivity/gates），可单测；
+  2. `gate_check` 命中否决即条件边直达 `compose_result`（跳过 aggregate/score/llm）；G2/G6 仅作为条件项，不自动否决；
+  3. LLM 复核者 schema 无分数字段，`evidence_refs` 必须命中证据包 id（失败丢弃 + 计数）；离线/网关失败显式 unavailable，不伪造；
+  4. 规则与数据契约：闸门标记必须与数据一致（scope_mismatch 表示本次标的物、证照有效期不随机过期），seed 基线负责守住；
+  5. finalize 才写 supplier_eval/artifact/audit，HITL 前零写入（与 M1/M3 一致）。
+- **同步更新 Spec**：§6 实现口径、§13.3 v1.12。
+
 ### ADR-020｜M1 检索先用「词法 + 精确 + 结构化」三路 RRF，向量 leg 留可注入位
 - **触发原因**：Spec §5.3 要求 pgvector + 全文 + RRF；但当前 LLM 网关只有 `complete`，没有 `embed` 角色，
   seed 也未落 embedding；直接造"伪向量"检索会得出不可解释的指标。

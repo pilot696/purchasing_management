@@ -58,6 +58,13 @@ M1 前端（W2 第 4 步）已完成：`/precheck` 页面输入 PR 号启动真�
 + 字段/规格与检索候选（来源 badge：词法/精确/规格桶）+ findings 卡片 + 建议补丁（∅→值、来源、policy 证据）；
 无问题时显示"自动放行"；`采纳并继续` 会走 HITL → finalize 写回 `pr_item.spec` 并落审计。前端 32 单测、构建通过。
 
+M2 供应商评估（W3）已完成：`app/scoring/supplier.py` 五维纯函数评分 + 6 条硬闸门（G2/G6 为条件项不否决，
+闸门命中直接跳过评分与 LLM）；`supplier_graph` 含 300 次权重扰动敏感性、LLM 复核者（schema 无分数、evidence_refs 后置校验、
+离线显式 unavailable）；finalize 单事务写 `supplier_eval`+artifact+audit。`/supplier` 页面：闸门条 + SVG 五维雷达 +
+维度明细（原始指标可追溯）+ 敏感性/条件 + LLM 风险卡。
+基线（30 家，`scripts/m2_eval.py`）：闸门检出 **100%**、误报 **0%**、冷启动一致 **100%**、flip_rate **5.55%**；
+`scripts/smoke_m2.py` 验证真实 HTTP+SSE+HITL 全链路（SUP-001 approve 94.43）。
+
 ## 快速开始（Windows）
 
 ```powershell

@@ -107,7 +107,7 @@ async def main() -> None:
 
         created = await client.post(
             f"{base}/api/v1/runs",
-            json={"module": "m2", "subject": {"supplier_id": "SUP-E2E-0001"}},
+            json={"module": "m2", "subject": {"supplier_code": "SUP-001"}},
             headers={"X-Demo-Role": "buyer"},
         )
         if created.status_code != 202:
@@ -134,7 +134,7 @@ async def main() -> None:
             headers={"X-Demo-Role": "requester"},
         )
         if forbidden.status_code != 403:
-            fail(f"requester 不应能复核 m1（期望 403，实际 {forbidden.status_code}）")
+            fail(f"requester 不应能复核 m2（期望 403，实际 {forbidden.status_code}）")
         print("[3/5] RBAC ok: requester -> 403")
 
         resumed = await client.post(
@@ -184,4 +184,5 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 

@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.agents.matching import MatchingDeps, build_matching_graph
 from app.agents.precheck import PrecheckDeps, build_precheck_graph
+from app.agents.supplier import SupplierDeps, build_supplier_graph
 from app.api.v1 import api_router
 from app.core.config import get_settings
 from app.core.errors import AppError, app_error_handler
@@ -46,12 +47,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.precheck_graph = build_precheck_graph(
         PrecheckDeps(bus=app.state.bus, session_factory=session_factory)
     )
+    # M2 图：gate → metrics → score → sensitivity → LLM 复核者 → compose →（HITL）→ finalize
+    app.state.supplier_graph = build_supplier_graph(
+        SupplierDeps(bus=app.state.bus, session_factory=session_factory)
+    )
     app.state.runs = RunService(
         app.state.bus,
         session_factory,
         step_delay_ms=settings.demo_step_delay_ms,
         matching_graph=app.state.matching_graph,
         precheck_graph=app.state.precheck_graph,
+        supplier_graph=app.state.supplier_graph,
     )
     # 网关记账：每次 LLM 调用写 llm_call（P0 用 FakeLLM 也会留痕）
     get_router().recorder = LedgerRecorder(session_factory)
@@ -130,3 +136,4 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+

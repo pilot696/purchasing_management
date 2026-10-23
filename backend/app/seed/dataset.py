@@ -412,7 +412,8 @@ def _build_master(rng, cfg: SeedConfig) -> dict[str, Any]:
         if "SAAS" in scope:
             cert_types.append("ISO27001")
         for cert_type in cert_types:
-            valid_to = date(2025, 12, 31) + timedelta(days=rng.randint(30, 900))
+            # 基础有效期放远：只有 expiring 集合刻意造"临期"，避免随机产生大量已过期证照（会误触发 G1）
+            valid_to = date(2027, 12, 31) + timedelta(days=rng.randint(30, 900))
             if idx in expiring:
                 valid_to = date(2026, 11, 1)  # 30 天内到期
             certs.append(
@@ -1055,3 +1056,4 @@ def build_dataset(cfg: SeedConfig | None = None) -> dict[str, Any]:
         "doc_groups": groups,
         "m3_gold": m3_gold,
     }
+

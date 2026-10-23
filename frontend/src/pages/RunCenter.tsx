@@ -67,24 +67,30 @@ export default function RunCenter() {
             <button
               type="button"
               disabled={
-                module.id === "m1" || module.id === "m3" ? dbDown : dbDown || busy || start.isPending
+                module.id === "m1" || module.id === "m2" || module.id === "m3"
+                  ? dbDown
+                  : dbDown || busy || start.isPending
               }
               onClick={() =>
                 module.id === "m3"
                   ? navigate("/matching")
-                  : module.id === "m1"
-                    ? navigate("/precheck")
-                    : start.mutate(module.id)
+                  : module.id === "m2"
+                    ? navigate("/supplier")
+                    : module.id === "m1"
+                      ? navigate("/precheck")
+                      : start.mutate(module.id)
               }
               className="mt-4 rounded-md bg-[var(--brand-primary)] px-3 py-2 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
               {module.id === "m3"
                 ? "去 M3 页面启动"
-                : module.id === "m1"
-                  ? "去 M1 页面启动"
-                  : start.isPending
-                    ? "创建中…"
-                    : "新建演示运行"}
+                : module.id === "m2"
+                  ? "去 M2 页面启动"
+                  : module.id === "m1"
+                    ? "去 M1 页面启动"
+                    : start.isPending
+                      ? "创建中…"
+                      : "新建演示运行"}
             </button>
           </section>
         ))}
