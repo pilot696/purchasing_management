@@ -163,3 +163,187 @@ export async function getRunSnapshot(runId: string): Promise<RunSnapshot> {
   if (!response.ok) throw await asError(response);
   return (await response.json()) as RunSnapshot;
 }
+
+// --------------------------------------------------------------------------- 运行历史 / 复核收件箱 / Trace / 规则 / 可观测
+
+export interface RunListItem {
+  id: string;
+  module: Module;
+  status: string;
+  subject_ref: Record<string, unknown>;
+  last_seq: number;
+  tokens_in: number;
+  tokens_out: number;
+  cost_cny: number;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number | null;
+  error: { code?: string; message?: string } | null;
+  pending_review_id: string | null;
+  pending_review_kind: string | null;
+}
+
+export interface RunListResponse {
+  items: RunListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface RunListParams {
+  module?: Module;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function listRuns(params: RunListParams = {}): Promise<RunListResponse> {
+  const query = new URLSearchParams();
+  if (params.module) query.set("module", params.module);
+  if (params.status) query.set("status", params.status);
+  query.set("limit", String(params.limit ?? 20));
+  query.set("offset", String(params.offset ?? 0));
+  const response = await fetch(`/api/v1/runs?${query.toString()}`, { headers: headers() });
+  if (!response.ok) throw await asError(response);
+  return (await response.json()) as RunListResponse;
+}
+
+export interface ReviewInboxItem {
+  id: string;
+  run_id: string;
+  kind: string;
+  status: string;
+  created_at: string | null;
+  run_module: Module;
+  run_status: string;
+  subject_ref: Record<string, unknown>;
+  verdict: string | null;
+  summary: string | null;
+  details: Record<string, unknown>;
+}
+
+export async function listReviews(): Promise<ReviewInboxItem[]> {
+  const response = await fetch("/api/v1/reviews", { headers: headers() });
+  if (!response.ok) throw await asError(response);
+  return (await response.json()) as ReviewInboxItem[];
+}
+
+export interface TraceEvent {
+  seq: number;
+  type: string;
+  payload: Record<string, unknown>;
+  created_at: string | null;
+}
+
+export interface LlmCallItem {
+  id: number;
+  step: string;
+  provider: string;
+  model: string;
+  tokens_in: number;
+  tokens_out: number;
+  cost_cny: number;
+  latency_ms: number;
+  retry_no: number;
+  cache_hit: boolean;
+  schema_repair: number;
+  ok: boolean;
+  error_code: string | null;
+  created_at: string | null;
+}
+
+export interface RunTrace {
+  run: RunListItem;
+  events: TraceEvent[];
+  llm_calls: LlmCallItem[];
+  artifacts: Array<{ id: string; module: string; kind: string }>;
+}
+
+export async function getRunTrace(runId: string): Promise<RunTrace> {
+  const response = await fetch(`/api/v1/runs/${runId}/trace`, { headers: headers() });
+  if (!response.ok) throw await asError(response);
+  return (await response.json()) as RunTrace;
+}
+
+export interface ObservabilitySummary {
+  runs_total: number;
+  by_status: Record<string, number>;
+  by_module: Record<string, number>;
+  success_rate: number;
+  pending_reviews: number;
+  tokens_in: number;
+  tokens_out: number;
+  cost_cny: number;
+  p50_duration_ms: number | null;
+  p95_duration_ms: number | null;
+  llm_calls: number;
+  avg_llm_latency_ms: number | null;
+  cache_hit_rate: number | null;
+}
+
+export async function getObservabilitySummary(): Promise<ObservabilitySummary> {
+  const response = await fetch("/api/v1/observability/summary", { headers: headers() });
+  if (!response.ok) throw await asError(response);
+  return (await response.json()) as ObservabilitySummary;
+}
+
+export interface EvalSnapshot {
+  available: boolean;
+  generated_at: string | null;
+  llm_mode: string | null;
+  seed: number | null;
+  data: Record<string, unknown>;
+}
+
+export async function getEvalSnapshot(): Promise<EvalSnapshot> {
+  const response = await fetch("/api/v1/observability/evals", { headers: headers() });
+  if (!response.ok) throw await asError(response);
+  return (await response.json()) as EvalSnapshot;
+}
+
+export interface CategoryItem {
+  code: string;
+  name: string;
+  version: number;
+  requires_gr: boolean;
+  required_slots: string[];
+}
+
+export interface RuleItem {
+  id: string;
+  category_code: string;
+  category_name: string;
+  code: string;
+  type: string;
+  severity: string;
+  field_path: string | null;
+  expression: Record<string, unknown>;
+  message_template: string;
+  policy_clause_ref: string | null;
+  enabled: boolean;
+  version: number;
+}
+
+export interface ToleranceItem {
+  id: string;
+  category_code: string | null;
+  diff_type: string;
+  abs_tol: number;
+  rel_tol: number;
+  action: string;
+  priority: number;
+  enabled: boolean;
+}
+
+export interface RuleCatalog {
+  categories: CategoryItem[];
+  rules: RuleItem[];
+  tolerances: ToleranceItem[];
+}
+
+export async function getRules(category?: string): Promise<RuleCatalog> {
+  const query = category ? `?category=${encodeURIComponent(category)}` : "";
+  const response = await fetch(`/api/v1/rules${query}`, { headers: headers() });
+  if (!response.ok) throw await asError(response);
+  return (await response.json()) as RuleCatalog;
+}

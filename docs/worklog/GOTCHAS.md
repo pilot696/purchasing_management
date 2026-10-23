@@ -332,4 +332,44 @@
   用**非容器生产形态**（uvicorn 托管 `frontend/dist`）验证 SPA/API 同端口路径；文档明确"构建需 Docker Desktop 配置代理"。
 - **防回归**：`docs/DEPLOYMENT.md` §1 写清前置条件与典型报错；把 `docker compose config` 纳入提交前检查（本轮已过）。
 
+## G-039｜FakeLLM 响应污染 prompt 缓存：切真实模型后拿到 `{"ok": true}`
+- **问题现象**：真实网关配好后，M2 复核仍报 `ValidationError ... input_value={'ok': True}`；llm_call 显示 provider=zhipu、latency=0、tokens_out=3、cost=0。
+- **根因定位**：离线模式（FORCE_FAKE_LLM=1）时 `build_providers` 用**真实 provider 名**构造 FakeLLM，prompt 缓存 key 只含 provider/model/prompt/schema；
+  fake 的 `{"ok": true}` 被写进磁盘缓存。切回真实模型后同一 prompt 命中缓存，直接返回假响应。
+- **修复手段**：`_cached_router(force_fake=True)` 不注入 PromptCache（fake 只读不写，避免污染）；清理 `.cache/prompts`；并让 llm_call 记录 cache_hit 以便排查。
+- **防回归**：真实 M2 首跑不再出现 `{'ok': True}`；可观测页 llm_call 能区分 cache_hit。
+
+## G-040｜`${DEEPSEEK_API_KEY}` 在 models.yaml 里展开成空串：Settings 读 .env 但不注入 os.environ
+- **问题现象**：配置真实网关后所有请求 `LLM_UPSTREAM`（base_url/api_key 为空），而 `curl` 手工调用正常。
+- **根因定位**：`app/llm/config.py` 的 `_expand_env` 只查 `os.getenv`；pydantic-settings 读取 `.env` 后**不会**写回 os.environ，
+  于是 `${DEEPSEEK_BASE_URL}` 等全部变空串。
+- **修复手段**：加载 yaml 时先解析 `backend/.env` 合并进变量表（os.environ 优先），再展开；不把密钥写进任何 tracked 文件。
+- **防回归**：`python -c`/网关探针能跑通 `router.complete`；`test_llm_config.py` 校验 roles/pricing。
+
+## G-041｜OpenCode Go 网关：端点不是 `/zen/go/v1/chat/completions`，且必须有 `x-opencode-session`
+- **问题现象**：`GET /zen/go/v1/models` 200，但 `POST /zen/go/v1/chat/completions` 返回 400 空 body；即使换 header 仍 400。
+- **根因定位**：官方文档（docs.pencil.dev 同款 Go 文档）给出推理端点 `https://opencode.ai/inference/go/openai/v1/chat/completions`；
+  且网关要求 `x-opencode-session`（稳定会话 id）+ 非通用 User-Agent。
+- **修复手段**：provider 配置新增 `extra_headers` 与 `session_header`，provider 进程内生成稳定 session；models.yaml 配好 session 头与 UA；`/zen/go/v1` 只用于 models 探测。
+- **防回归**：真实 M2 复核可成功；文档/README 写清端点和环境变量。
+
+## G-042｜reasoning tokens 吃掉 max_tokens：JSON 在 2048 处被截断
+- **问题现象**：M2 复核日志 `JSONDecodeError: Unterminated string starting at ... char 1707`；tokens_out 恰好 2048。
+- **根因定位**：DeepSeek/GLM 先输出 reasoning tokens，再输出 content；`max_tokens` 把两者一起限制。
+- **修复手段**：`reason`/`reason_small` 提到 4096 并放宽超时；JSON 提取容忍 ```json 围栏与前后缀；对"claim 超 80 字/条件超 3 条/memo 超 120 字"
+  做归一化截断后再做 Pydantic 校验（只截表达越界，不伪造事实）；失败才降级 unavailable。
+- **防回归**：M2 真实运行 `llm_status=ok`、top_risks=5；失败路径仍有 `llm_status=unavailable` 单测。
+
+## G-043｜llm_call 不归因到 run：可观测页 tokens/cost 全是 0
+- **问题现象**：M2 真实调用成功，`llm_call` 有 rows，但 `agent_run.tokens_in/out/cost` 全 0，列表与 summary 显示 0；llm_call.run_id 为 NULL。
+- **根因定位**：supplier 复核调用 `router.complete(...)` 未传 `run_id`；RunService 也从未把 llm_call 汇总回 agent_run。
+- **修复手段**：`call_llm_review` 接收 run_id 并传给 router；RunService 新增 `_sync_run_usage`（sum llm_call → agent_run），在 awaiting_review 与 finally 各同步一次。
+- **防回归**：`test_ops_api.py::test_trace_contains_events_and_llm_ledger`；真实运行 DB 可看到 run.tokens 与 llm_call 一致。
+
+## G-044｜SPA 深链 404：`StaticFiles(html=True)` 不会回退 index.html
+- **问题现象**：`/` 正常，但 `/precheck?run=<id>` 返回 `{"detail":"Not Found"}`，截图/刷新都失败。
+- **根因定位**：FastAPI `StaticFiles(directory, html=True)` 只把目录请求映射到 index.html，未知路径直接 404，React Router 的 history 路由没有入口。
+- **修复手段**：新增 `SPAStaticFiles`，404 且路径没有扩展名时回退 `index.html`；静态资源缺失仍返回 404（避免 MIME 错乱）。
+- **防回归**：验证 `/precheck?run=test` 返回 200 且含 `<div id="root">`；`scripts/screenshots.py` 深链全部成功。
+
 <!-- 追加位置：新踩坑写在本行上方 -->

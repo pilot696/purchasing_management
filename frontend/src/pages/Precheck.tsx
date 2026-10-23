@@ -1,5 +1,6 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+﻿import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { getDemoRole, getRunSnapshot, resumeRun, startRun } from "../lib/api";
 import { isTerminal } from "../lib/events";
@@ -23,7 +24,8 @@ const DEFAULT_PR = "PR-2026-0001";
 
 export default function Precheck() {
   const [prNo, setPrNo] = useState(DEFAULT_PR);
-  const [runId, setRunId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const [runId, setRunId] = useState<string | null>(() => searchParams.get("run"));
   const [decisionError, setDecisionError] = useState<string | null>(null);
 
   const role = getDemoRole();
@@ -336,3 +338,4 @@ export default function Precheck() {
     </div>
   );
 }
+

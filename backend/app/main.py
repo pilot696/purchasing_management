@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.agents.matching import MatchingDeps, build_matching_graph
 from app.agents.precheck import PrecheckDeps, build_precheck_graph
@@ -28,6 +29,21 @@ from app.services.runs import RunService
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIST = BACKEND_ROOT.parent / "frontend" / "dist"
+
+
+class SPAStaticFiles(StaticFiles):
+    """前端 dist 托管：未知路径回退 index.html（React Router 的 /precheck?run= 等深链接）。
+
+    静态资源 404 不回退（避免把缺失的 .js 返回成 HTML 导致 MIME 报错）。
+    """
+
+    async def get_response(self, path: str, scope: dict[str, Any]):  # type: ignore[override]
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404 and "." not in Path(path).name:
+                return await super().get_response("index.html", scope)
+            raise
 
 # 兜底：若进程在 import 阶段尚未进入事件循环（脚本/测试），提前切换 Windows 事件循环策略
 ensure_windows_selector_loop()
@@ -130,7 +146,7 @@ def create_app() -> FastAPI:
     app.include_router(api_router)
 
     if FRONTEND_DIST.is_dir():
-        app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
+        app.mount("/", SPAStaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
 
     return app
 

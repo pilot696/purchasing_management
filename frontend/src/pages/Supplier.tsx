@@ -1,5 +1,6 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+﻿import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { getDemoRole, getRunSnapshot, resumeRun, startRun } from "../lib/api";
 import { isTerminal } from "../lib/events";
@@ -45,7 +46,8 @@ function Radar({ dimensions }: { dimensions: Array<{ dimension: string; score: n
 
 export default function Supplier() {
   const [supplierCode, setSupplierCode] = useState(DEFAULT_SUPPLIER);
-  const [runId, setRunId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const [runId, setRunId] = useState<string | null>(() => searchParams.get("run"));
   const [decisionError, setDecisionError] = useState<string | null>(null);
 
   const role = getDemoRole();
@@ -381,3 +383,4 @@ export default function Supplier() {
     </div>
   );
 }
+

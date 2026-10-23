@@ -1,45 +1,58 @@
 # 模型网关配置（Spec §2.5 / §4.2）
-# 价格快照：2026-10-23 官方定价页；仅为工程记账口径，发布前需复核（§13 O1）
+# 价格快照：2026-10-23 OpenCode Go 官方定价页（按 1M tokens，USD）；仅为工程记账口径，发布前需复核（§13 O1）
 # 角色 -> 跨厂商降级链：任何单厂商故障都不应让 Agent 无法出结论
+#
+# 当前接入：OpenCode Go（OpenAI 兼容端点 https://opencode.ai/inference/go/openai/v1）
+#   - 该网关要求 x-opencode-session 头（见 provider.session_header；provider 会生成稳定 session id）
+#   - Qwen3.8 系列在网关只提供 Anthropic 协议端点，本项目的 OpenAI 兼容 provider 暂不能调用（vision 待适配）
+#   - 网关没有 embedding 端点，向量检索 leg 仍按 ADR-020 待接
 
 providers:
   deepseek:
     base_url: ${DEEPSEEK_BASE_URL}
     api_key: ${DEEPSEEK_API_KEY}
     compat: openai
+    extra_headers:
+      User-Agent: procurement-workbench/1.0
+    session_header: x-opencode-session
   dashscope:
     base_url: ${DASHSCOPE_BASE_URL}
     api_key: ${DASHSCOPE_API_KEY}
     compat: openai
+    session_header: x-opencode-session
   zhipu:
     base_url: ${ZHIPU_BASE_URL}
     api_key: ${ZHIPU_API_KEY}
     compat: openai
+    extra_headers:
+      User-Agent: procurement-workbench/1.0
+    session_header: x-opencode-session
   fake:
     base_url: "fake://local"
     api_key: ""
     compat: fake
 
 roles:
-  # 文本推理 / 工具调用 / 结构化抽取（DeepSeek 仅 JSON mode，无 strict schema）
+  # 文本推理 / 结构化抽取（Go 端点支持 JSON object 模式；strict json_schema 由业务侧 Pydantic 校验兜底）
+  # 注意：DeepSeek/GLM 会输出 reasoning tokens，这些都计入 max_tokens；2048 会在 JSON 中途截断，故给 4096。
   reason:
     provider: deepseek
-    model: deepseek-flash
+    model: deepseek-v4.1-flash
     schema_mode: json_object
     temperature: 0.0
-    timeout_s: 60
-    max_tokens: 2048
+    timeout_s: 120
+    max_tokens: 4096
     fallback: [reason_small]
-  # 跨厂商降级：DeepSeek 整体不可用时由智谱承接（JSON mode）
+  # 跨厂商降级：DeepSeek 不可用时由 GLM-5.3-Flash 承接（同网关，JSON object）
   reason_small:
     provider: zhipu
     model: glm-5.3-flash
     schema_mode: json_object
     temperature: 0.0
-    timeout_s: 40
-    max_tokens: 2048
+    timeout_s: 120
+    max_tokens: 4096
     fallback: []
-  # 视觉抽取主模型：Qwen 系支持真正的 JSON-Schema 约束解码
+  # 视觉抽取：网关的 Qwen3.8 只提供 Anthropic /messages 端点，当前 provider 不支持；保留配置待适配器
   vision:
     provider: dashscope
     model: qwen3.8-max
@@ -47,7 +60,7 @@ roles:
     temperature: 0.0
     timeout_s: 120
     max_tokens: 4096
-    fallback: [vision_backup, vision_cheap]
+    fallback: []
   vision_cheap:
     provider: dashscope
     model: qwen3.8-flash
@@ -56,14 +69,7 @@ roles:
     timeout_s: 90
     max_tokens: 4096
     fallback: []
-  vision_backup:
-    provider: zhipu
-    model: glm-5.3-flash
-    schema_mode: json_object
-    temperature: 0.0
-    timeout_s: 90
-    max_tokens: 4096
-    fallback: []
+  # 向量检索 leg：网关无 embedding 端点，接入其他 provider 后再启用（ADR-020）
   embed:
     provider: dashscope
     model: text-embedding-v4
@@ -74,20 +80,18 @@ roles:
     model: qwen3-rerank
 
 pricing_usd_per_1m:
-  deepseek-flash:
+  deepseek-v4.1-flash:
     in: 0.15
     out: 0.60
-  qwen3.8-max:
-    in: 1.65
-    out: 4.951
-  qwen3.8-flash:
-    in: null
-    out: null
   glm-5.3-flash:
     in: 0.15
     out: 0.50
-  text-embedding-v4:
-    in: 0.072
-    out: 0.0
+  qwen3.8-max:
+    in: 2.0
+    out: 6.0
+  qwen3.8-flash:
+    in: 0.15
+    out: 0.47
 
 fx_usd_cny: 7.1
+

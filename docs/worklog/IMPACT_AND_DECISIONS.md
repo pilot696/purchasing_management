@@ -12,6 +12,20 @@
 
 ## 决策记录（倒序追加，最新在上）
 
+### ADR-024｜W4 演示闭环：可观测数据面 + 真实网关适配 + SPA 深链
+- **触发原因**：用户选择"① 演示闭环"（运行历史/复核收件箱/规则库/可观测页），并提供 OpenCode Go 真实网关；
+  需要在不改业务图的前提下，把"跑过但看不见"的数据变成可演示页面。
+- **GitNexus impact**：`RunService` 新增只读查询方法（list/trace/summary），`main.py` 增加静态回退，`llm/config+provider+router` 增加 headers/dotenv 解析；
+  M1/M2/M3 图契约不变；前端新增只读页与深链参数。`detect_changes` 覆盖后以全量测试 + 4 套 e2e 回归。
+- **最终方案**：
+  1. 数据面统一走 `RunService` 只读查询：`GET /runs`（分页/过滤 + pending review 关联）、`GET /reviews`（收件箱摘要）、
+     `GET /runs/{id}/trace`（事件 + llm_call + artifacts）、`GET /observability/summary`、`GET /rules`、`GET /observability/evals`；
+  2. LLM 网关适配 OpenCode Go：providers 支持 `extra_headers`/`session_header`，config 解析 `.env`；FakeLLM 禁缓存；llm_call 传 run_id 并回写 run 用量；
+  3. 结构化输出容错：prompt 注入 JSON Schema、容忍围栏、对超长 field 归一化；失败仍显式 `unavailable`；
+  4. SPA 深链回退 `index.html`（非静态资源），支持 `?run=` 直接回放；
+  5. 截图脚本用本机 Chrome（Playwright channel），避免额外 Chromium 下载。
+- **同步更新 Spec**：§8.3 接口表、§9.4 W4 演示闭环口径、§12 成本（真实单次复核 ¥0.0131）、§13.3 v1.14。
+
 ### ADR-023｜W4 交付形态：设计稿脚本化同源 + 单镜像托管 SPA
 - **触发原因**：D13 要求 pen.dev 只做设计稿、代码 UI 手写；W4 需要可复现的设计资产（不能手改 `.pen` 导致三处漂移）；
   部署需要"新机器一条命令起来"，但不想维护 nginx + 前端独立容器。

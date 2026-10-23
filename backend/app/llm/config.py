@@ -16,15 +16,40 @@ from typing import Any
 import yaml
 
 _ENV_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
+_BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _expand_env(value: Any) -> Any:
+def _dotenv_values() -> dict[str, str]:
+    """把 backend/.env 合并进变量解析（Settings 读 .env 但不注入 os.environ）。
+
+    历史坑：models.yaml 里 ${DEEPSEEK_API_KEY} 只能从 os.environ 解析，而 .env 只被
+    pydantic-settings 读取 → 真实调用时 base_url/api_key 都被展开成空串。
+    """
+    values = dict(os.environ)
+    env_file = _BACKEND_ROOT / ".env"
+    if not env_file.exists():
+        return values
+    for raw_line in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if value[:1] == value[-1:] and value[:1] in {'"', "'"}:
+            value = value[1:-1]
+        values.setdefault(key, value)
+    return values
+
+
+def _expand_env(value: Any, env: dict[str, str] | None = None) -> Any:
+    env = env or _dotenv_values()
     if isinstance(value, str):
-        return _ENV_PATTERN.sub(lambda m: os.getenv(m.group(1), ""), value)
+        return _ENV_PATTERN.sub(lambda m: env.get(m.group(1), ""), value)
     if isinstance(value, dict):
-        return {k: _expand_env(v) for k, v in value.items()}
+        return {k: _expand_env(v, env) for k, v in value.items()}
     if isinstance(value, list):
-        return [_expand_env(v) for v in value]
+        return [_expand_env(v, env) for v in value]
     return value
 
 
@@ -34,6 +59,8 @@ class ProviderConfig:
     base_url: str
     api_key: str
     compat: str = "openai"
+    extra_headers: dict[str, str] = field(default_factory=dict)
+    session_header: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -70,6 +97,8 @@ def parse_llm_config(raw: dict[str, Any]) -> LLMConfig:
             base_url=str(cfg.get("base_url", "")),
             api_key=str(cfg.get("api_key", "")),
             compat=str(cfg.get("compat", "openai")),
+            extra_headers={str(k): str(v) for k, v in (cfg.get("extra_headers") or {}).items()},
+            session_header=(str(cfg["session_header"]) if cfg.get("session_header") else None),
         )
         for name, cfg in (raw.get("providers") or {}).items()
     }

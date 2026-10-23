@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import uuid
 from typing import Any
 
 import httpx
@@ -96,11 +97,28 @@ class OpenAICompatProvider:
         base_url: str,
         api_key: str,
         client: httpx.AsyncClient | None = None,
+        extra_headers: dict[str, str] | None = None,
+        session_header: str | None = None,
     ) -> None:
         self.name = name
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self._client = client
+        self._extra_headers = dict(extra_headers or {})
+        self._session_header = session_header
+        # OpenCode Go 等网关要求稳定 session 头用于路由/缓存；每个 provider 进程内固定一个即可
+        self._session_id = uuid.uuid4().hex
+
+    def _headers(self) -> dict[str, str]:
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "procurement-workbench/1.0",
+        }
+        headers.update(self._extra_headers)
+        if self._session_header:
+            headers[self._session_header] = self._session_id
+        return headers
 
     def _payload(
         self,
@@ -153,7 +171,7 @@ class OpenAICompatProvider:
             resp = await client.post(
                 f"{self.base_url}/chat/completions",
                 json=payload,
-                headers={"Authorization": f"Bearer {self.api_key}"},
+                headers=self._headers(),
                 timeout=timeout_s,
             )
         except httpx.TimeoutException as exc:

@@ -72,6 +72,9 @@ LLM_REVIEW_PROMPT = """【角色】你是采购风控复核人。材料是供应
 <evidence_pack>
 {evidence_pack}
 </evidence_pack>
+
+【输出 JSON Schema（必须严格匹配字段名，不得输出 schema 之外的键）】
+{schema}
 """
 
 
@@ -544,41 +547,79 @@ async def call_llm_review(
     deps: SupplierDeps,
     context: dict[str, Any],
     evidence_pack: dict[str, Any],
-) -> tuple[dict[str, Any] | None, str, str | None]:
-    prompt = LLM_REVIEW_PROMPT.format(evidence_pack=json.dumps(evidence_pack, ensure_ascii=False, default=str))
+    run_id: UUID | None = None,
+) -> tuple[dict[str, Any] | None, str, str | None, int]:
+    schema_json = json.dumps(LlmRiskReview.model_json_schema(), ensure_ascii=False)
+    prompt = LLM_REVIEW_PROMPT.format(
+        evidence_pack=json.dumps(evidence_pack, ensure_ascii=False, default=str),
+        schema=schema_json,
+    )
     messages = [Message(role="system", content=prompt), Message(role="user", content="请按 schema 输出复核结果。")]
-    try:
-        if deps.llm_complete is not None:
-            result = await deps.llm_complete(messages, LlmRiskReview)
-        else:
-            result = await get_router().complete(
-                role="reason_small",
-                messages=messages,
-                schema=LlmRiskReview,
-                temperature=0.0,
-                step="m2.llm_risk_review",
-            )
-        payload = json.loads(result.text)
-        review = LlmRiskReview.model_validate(payload)
-    except Exception as exc:  # noqa: BLE001 - LLM 失败必须降级而非伪造
-        return None, "unavailable", f"{type(exc).__name__}: {exc}"
-    clean, dropped = validate_llm_review(review, set(evidence_pack["ids"]))
-    if dropped:
-        # 记录丢弃条数：审计用
-        clean = clean.model_copy(update={"insert_steps": None}) if False else clean
-    return clean.model_dump(mode="json"), "ok", None
+    last_error: Exception | None = None
+    # 结构化输出失败时给模型一次自我修复机会（计入同一次 step 的两次调用，便于记账）
+    for _attempt in range(2):
+        try:
+            if deps.llm_complete is not None:
+                result = await deps.llm_complete(messages, LlmRiskReview)
+            else:
+                result = await get_router().complete(
+                    role="reason",
+                    messages=messages,
+                    schema=LlmRiskReview,
+                    temperature=0.0,
+                    step="m2.llm_risk_review",
+                    run_id=run_id,
+                )
+            payload = _normalize_llm_payload(_load_json_object(result.text))
+            review = LlmRiskReview.model_validate(payload)
+            clean, dropped = validate_llm_review(review, set(evidence_pack["ids"]))
+            return clean.model_dump(mode="json"), "ok", None, dropped
+        except Exception as exc:  # noqa: BLE001 - LLM 失败必须降级而非伪造
+            last_error = exc
+            messages = [
+                *messages,
+                Message(role="user", content=f"上一次输出不符合要求：{exc}。请严格按给的 JSON Schema 只输出一个 JSON 对象。"),
+            ]
+    return None, "unavailable", f"{type(last_error).__name__}: {last_error}", 0
+
+
+def _load_json_object(text: str) -> Any:
+    """从模型输出中提取 JSON 对象：容忍 ```json 围栏、前后缀说明文字。"""
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.strip("`").strip()
+        if stripped.lower().startswith("json"):
+            stripped = stripped[4:].strip()
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start >= 0 and end > start:
+        stripped = stripped[start : end + 1]
+    return json.loads(stripped)
+
+
+def _normalize_llm_payload(payload: Any) -> Any:
+    """模型常见越界：claim 超 80 字、条件/风险条数超限、memo 超 120 字。
+    这些是"表达超出字数"，不是事实错误；截断/裁剪后继续做引用校验，避免整次降级。"""
+    if not isinstance(payload, dict):
+        return payload
+    risks = payload.get("top_risks")
+    if isinstance(risks, list):
+        trimmed: list[Any] = []
+        for risk in risks[:6]:
+            if isinstance(risk, dict) and isinstance(risk.get("claim"), str):
+                risk["claim"] = risk["claim"][:80]
+            trimmed.append(risk)
+        payload["top_risks"] = trimmed
+    conditions = payload.get("conditions")
+    if isinstance(conditions, list):
+        payload["conditions"] = [str(condition)[:120] for condition in conditions[:3]]
+    memo = payload.get("reviewer_memo")
+    if isinstance(memo, str):
+        payload["reviewer_memo"] = memo[:120]
+    return payload
 
 
 # --------------------------------------------------------------------------- 图节点
-
-
-def _as_float(value: Any) -> float | None:  # noqa: F811 - 保持轻量转换函数单一职责
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 async def _load(state: SupplierState, deps: SupplierDeps) -> dict[str, Any]:
@@ -647,8 +688,10 @@ def _sensitivity(state: SupplierState, deps: SupplierDeps) -> dict[str, Any]:
 async def _llm_review(state: SupplierState, deps: SupplierDeps) -> dict[str, Any]:
     if state.get("gate_veto"):
         return {"llm_review": None, "llm_status": "skipped_gate_hit", "llm_error": None}
-    review, status, error = await call_llm_review(deps, state["context"], state["evidence_pack"])
-    return {"llm_review": review, "llm_status": status, "llm_error": error}
+    review, status, error, dropped = await call_llm_review(
+        deps, state["context"], state["evidence_pack"], UUID(state["run_id"])
+    )
+    return {"llm_review": review, "llm_status": status, "llm_error": error, "llm_dropped_refs": dropped}
 
 
 def _compose(state: SupplierState, deps: SupplierDeps) -> dict[str, Any]:
@@ -901,7 +944,9 @@ async def compute_supplier_report(
         ]
         state["total"] = weighted_total(scores)
         state["sensitivity"] = sensitivity_analysis(scores, base_weights=context["weights"])
-        review, status, error = await call_llm_review(fake_deps, context, state["evidence_pack"])
+        review, status, error, _dropped = await call_llm_review(
+            fake_deps, context, state["evidence_pack"], None
+        )
         state["llm_review"] = review
         state["llm_status"] = status
         state["llm_error"] = error
@@ -910,5 +955,7 @@ async def compute_supplier_report(
         state["llm_status"] = "skipped_gate_hit"
         state["llm_error"] = None
     return _compose(state, fake_deps)["report"]
+
+
 
 

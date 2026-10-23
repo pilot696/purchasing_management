@@ -1,4 +1,4 @@
-# 评测报告（合成数据基线）
+﻿# 评测报告（合成数据基线）
 
 > 生成日期：2026-10-23 ｜ seed=42 ｜ 运行模式：**离线 FakeLLM**（`FORCE_FAKE_LLM=1`，真实 API 未接入）
 > 原始数据：[`evals/extraction_baseline.json`](evals/extraction_baseline.json)、[`evals/m1_baseline.json`](evals/m1_baseline.json)、
@@ -82,7 +82,7 @@ LLM 复核者叙述（schema 无分数，`evidence_refs` 后置校验）。**未
 
 | 项 | 结果 |
 |---|---|
-| 后端单测 | **88 passed / 18 skipped** |
+| 后端单测 | **88 passed / 22 skipped** |
 | 后端集成测试（DB） | **17 passed / 1 skipped** |
 | 前端单测 | **39 passed** |
 | 前端构建 | **360.90 KB / gzip 110.27 KB**（99→ 模块） |
@@ -126,3 +126,5 @@ python scripts/smoke_m1.py && python scripts/smoke_m2.py && python scripts/smoke
 ```
 
 > 数字均来自上述命令的最近一次运行；`evals/latest.json` 为汇总快照，不手工编辑单项指标。
+
+

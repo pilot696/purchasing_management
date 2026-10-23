@@ -1,4 +1,4 @@
-# PROGRESS — 里程碑与任务留痕
+﻿# PROGRESS — 里程碑与任务留痕
 
 > 协议来源：`CLAUDE.md` §2。每条留痕必须包含：`[日期时间] [里程碑] 已完成模块 + 关联文件 + 单测通过数 + 下一步待办`。
 > 唯一业务事实来源：`docs/PROJECT_SPEC.md`（v1.1）。
@@ -15,6 +15,27 @@
 ---
 
 ## 留痕记录（倒序追加，最新在上）
+
+### [2026-10-23 20:05] W4 演示闭环：运行历史/收件箱/规则库/可观测 + 真实网关 + 截图
+- **变更文件**：
+  - 后端：新增 `api/v1/{rules,observability}.py`、`schemas/catalog.py`、`tests/test_ops_api.py`；`schemas/runs.py` 增加列表/收件箱/Trace 模型；
+    `services/runs.py` 增加 `list_runs / list_review_inbox / trace / observability_summary / rule_catalog`（含 llm_call 用量汇总回 agent_run）；
+    `main.py` 增加 SPA 深链回退（`SPAStaticFiles`）；`llm/{provider,config,router,models.yaml}` 接入 OpenCode Go（session 头、extra_headers、dotenv 展开、FakeLLM 禁缓存）；
+    `agents/supplier.py` 真实复核（schema 注入 prompt、JSON 容错、越界字段归一化、run_id 归属）
+  - 前端：`pages/{RunCenter,Rules,Observability}.tsx` 重写；`lib/api.ts` 增加 6 组接口；M1/M2/M3 支持 `?run=` 深链；`styles/tokens.css` 补 cancelled 状态
+  - 脚本/资产：`scripts/{demo_runs,screenshots}.py`、`docs/screens/*.png`（7 张）、`docs/RESUME_TEMPLATE.md`、`evals/latest.json`（real_llm_smoke）、README/Spec v1.14
+- **核心实现**：
+  - Run 中心：KPI（运行数/待复核/成功率/LLM 调用）+ 模块入口 + 待复核收件箱（M1/M2/M3 摘要/verdict/去处理）+ 近期运行表（点行回放）；
+  - 可观测：`summary`（成功率只按终态计算、P50/P95、tokens/cost、LLM 延迟/缓存）+ Trace（节点时间线 + llm_call 记账）+ 评测基线卡（读 evals/latest.json）；
+  - 规则库：品类分桶 + 17 条规则（expression 原文）+ 容差策略表；
+  - 真实网关：OpenCode Go 端点 `https://opencode.ai/inference/go/openai/v1`；`x-opencode-session` + UA；`${ENV}` 从 `.env` 解析；FakeLLM 模式禁用 prompt 缓存防污染；M2 schema 全量注入 + JSON 围栏容忍 + claim 超长截断。
+- **本轮踩坑（GOTCHAS G-039~G-044）**：FakeLLM 污染 prompt 缓存、dotenv 不参与 `${ENV}` 展开、网关缺 session 头 400、reasoning tokens 截断 JSON、run 用量未归因、SPA 深链 404。
+- **验证结果**：
+  - 后端单测 **88 passed / 22 skipped**；DB 集成 **19 passed / 3 skipped**（新增 4 条演示闭环 API 测试）；前端 **39 passed**、tsc 0 错、build **381.67KB / gzip 114.45KB**；
+  - 真实 LLM：M2 `llm_risk_review` 完整跑通（deepseek-v4.1-flash，单次 1658→2662 tokens、¥0.0131；缓存命中 cost=0），run 用量与 `llm_call` 归属正确（16.6 万 tokens 汇总在 run 上）；
+  - e2e 截图：`SMOKE_*` 契约未回归；Playwright 实拍 7 张（Run 中心/M1/M2/M3/规则/可观测/设计稿）到 `docs/screens/`；
+  - 服务端深链：`/precheck?run=...` 返回 SPA（200），旧 `StaticFiles(html=True)` 的 404 已修。
+- **下一步 (Next)**：无剩余里程碑；可选：真实模型全量回填（四套 eval）、视觉适配器（Qwen Anthropic 端点）、向量 leg（embedding 供应商）、M1 补丁逐条编辑、运行分页筛选增强。
 
 ### [2026-10-23 19:10] W4：评测报告 + pen.dev 设计资产 + 容器化部署 + 简历数字回填
 - **变更文件**：新增 `docs/EVAL_REPORT.md`、`evals/latest.json`、`docs/DEPLOYMENT.md`、根 `Dockerfile`、`.dockerignore`、`design/{tokens.json,design.pen,preview.html,README.md}`、`scripts/gen_design_pen.py`；修改 `docker-compose.yml`（api 多阶段构建 + healthcheck）、`README.md`（状态/部署/链接）、`docs/PROJECT_SPEC.md`（§9.4/§12/版本 v1.13）、`Makefile`（eval/up-app/seed-docker/design）
@@ -284,3 +305,4 @@
 - **下一步 (Next)**：创建 `backend/` 骨架与依赖安装，落地 `agent_run / run_event / llm_call` 三张可观测表。
 
 <!-- 追加位置：新记录写在本行上方 -->
+

@@ -14,8 +14,10 @@ from app.api.deps import BusDep, RoleDep, RunServiceDep, require_module_role
 from app.core.config import get_settings
 from app.schemas.runs import (
     ResumeRequest,
-    ReviewOut,
+    ReviewInboxItem,
+    RunListResponse,
     RunSnapshot,
+    RunTraceResponse,
     StartRunRequest,
     StartRunResponse,
 )
@@ -31,10 +33,27 @@ async def start_run(body: StartRunRequest, service: RunServiceDep, role: RoleDep
     return StartRunResponse(**result)
 
 
+@router.get("/runs", response_model=RunListResponse)
+async def list_runs(
+    service: RunServiceDep,
+    module: str | None = Query(default=None, pattern="^(m1|m2|m3)$"),
+    status: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> RunListResponse:
+    data = await service.list_runs(limit=limit, offset=offset, module=module, status=status)
+    return RunListResponse(**data)
+
+
 @router.get("/runs/{run_id}", response_model=RunSnapshot)
 async def get_run(run_id: UUID, service: RunServiceDep) -> RunSnapshot:
     snap = await service.snapshot(run_id)
     return RunSnapshot(**snap)
+
+
+@router.get("/runs/{run_id}/trace", response_model=RunTraceResponse)
+async def get_run_trace(run_id: UUID, service: RunServiceDep) -> RunTraceResponse:
+    return RunTraceResponse(**await service.trace(run_id))
 
 
 @router.get("/runs/{run_id}/events")
@@ -120,10 +139,9 @@ async def cancel_run(run_id: UUID, service: RunServiceDep) -> dict[str, str]:
     return {"run_id": str(run_id), "status": "cancelled"}
 
 
-@router.get("/reviews", response_model=list[ReviewOut])
-async def list_reviews(service: RunServiceDep) -> list[ReviewOut]:
-    rows = await service.list_pending_reviews()
-    return [ReviewOut.from_row(r) for r in rows]
+@router.get("/reviews", response_model=list[ReviewInboxItem])
+async def list_reviews(service: RunServiceDep) -> list[ReviewInboxItem]:
+    return [ReviewInboxItem(**item) for item in await service.list_review_inbox()]
 
 
 @router.post("/reviews/{review_id}/decision")

@@ -1,7 +1,7 @@
-# 企业通用间接采购智能管理与风控系统 — PRD & Agent Spec
+﻿# 企业通用间接采购智能管理与风控系统 — PRD & Agent Spec
 
 > **Procurement AI Agent Workbench**｜全栈 + Multi-Agent 工程级需求与技术架构说明书
-> 版本：v1.13（W4 收尾：M2 落地、评测报告、pen.dev 设计资产、容器化部署、简历数字回填）｜日期：2026-10-23｜目标岗位：AI 应用 / Agent 开发工程师
+> 版本：v1.14（W4 演示闭环：运行历史/复核收件箱/规则库/可观测页 + 真实模型网关接入 + 截图资产）｜日期：2026-10-23｜目标岗位：AI 应用 / Agent 开发工程师
 > 本文档是开发与 pen.dev 画布设计的**唯一事实来源**。任何实现偏离需在 §13 变更记录中登记。
 
 ---
@@ -1872,9 +1872,17 @@ queued ──► running ──► awaiting_review ──► running ──► s
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/reviews` | `?status=pending&module=` → Run 中心"待复核"页签 |
+| GET | `/reviews` | 待复核收件箱（run 模块/单据/verdict/summary，供 Run 中心） |
 | GET | `/reviews/{id}` | 详情（含 payload） |
 | POST | `/reviews/{id}/decision` | `{decision, edits?, note?}` |
+
+**Rules & Observability（W4 演示闭环，只读）**
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/rules` | `?category=` → categories + rules（含 expression）+ tolerance policies |
+| GET | `/observability/summary` | 运行总数/成功率/待复核/P50·P95/tokens/cost/LLM 延迟与缓存命中 |
+| GET | `/observability/evals` | `evals/latest.json` 快照（评测页基线卡） |
 
 **Documents**
 
@@ -2231,6 +2239,12 @@ Evals view variant: 4 metric tables with baseline bars.
 > 同脚本产出 `design/preview.html` 静态预览，并自检 page 数=6、`$variable` 引用可解析。
 > 未在 pen.dev GUI 内做像素级走查（设计稿用于评审/交接）；代码 UI 仍是唯一实现（D13）。
 > 部署见 `docs/DEPLOYMENT.md`（多阶段 Dockerfile + compose api 服务，SPA 同端口托管）。
+>
+> **W4 演示闭环（v1.14）**：Run 中心接入 `GET /runs`（历史 + 待复核收件箱）与 `GET /reviews`；
+> 规则库页读 `GET /rules`（规则表 + 容差策略，只读）；可观测页读 `GET /observability/summary` + `/runs/{id}/trace`
+> + `/observability/evals`（节点时间线 / LLM 记账 / 评测基线）；三个业务页支持 `?run=<id>` 深链回放。
+> 模型网关已接 OpenCode Go（`x-opencode-session` 头、dotenv 展开、真实 LLM 复核已验证）；
+> 6 页截图由 `scripts/screenshots.py`（Playwright + 本机 Chrome）生成到 `docs/screens/`。
 
 ---
 
@@ -2440,7 +2454,8 @@ make eval SUITE=m3        # 单套件
 - **S**：LLM 应用最常见的质疑是"不可控、不可算账"。
 - **T**：让每次调用可记账、每次运行可回放、成本可归因到模块。
 - **A**：自写 OpenAI 兼容网关（路由/降级/重试/缓存/结构化 repair），每次调用落 `llm_call`，每步落 `run_event`，UI 提供 trace 与成本看板；评测缓存按 `sha256(model+prompt+schema)` 命中（**离线未测**，接入真实模型后回填命中率）。
-- **R**：全项目 API 成本 **¥0**（离线 FakeLLM：真实 API 未接入，成本/缓存命中率待回填）；离线 e2e 运行 tokens=0、cost=0；
+- **R**：离线全量基线成本 **¥0**（FakeLLM）；已接真实网关（OpenCode Go）验证 M2 复核闭环：单次调用
+  `tokens 1658 → 2662`、记账成本 **¥0.0131**（deepseek-v4.1-flash，含 reasoning tokens），同一 prompt 二次调用命中缓存 cost=0；
   `llm_call`/`run_event` 记账与回放已在 M1/M2/M3 真实 e2e 冒烟中验证。
 
 ### 12.5 简历三条 bullet（成稿模板）
@@ -2455,7 +2470,7 @@ make eval SUITE=m3        # 单套件
   后端 88 单测 + 17 集成、前端 39 单测、4 套真实 e2e 冒烟（M1/M2/M3/demo）。
 · 自写 OpenAI 兼容网关（路由/降级/重试/缓存/结构化 repair）与可观测表（run_event 回放、
   llm_call 记账、evidence 引用后置校验），每条结论可追溯到规则/证据/人工决策；
-  当前离线基线成本 ¥0（FakeLLM），真实模型成本与缓存命中率待接入后回填。
+  当前离线基线成本 ¥0（FakeLLM）；真实网关已验证单次 M2 复核约 ¥0.013（实测 tokens 1658→2662），全量成本/缓存命中率待回填。
 ```
 
 ### 12.6 答辩预案（面试官最可能追问的 12 问）
@@ -2523,6 +2538,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-23 | v1.11 | M1 前端工作台落地（`/precheck`：结论横幅 + 预算条 + 字段/规格与检索候选 + findings + 补丁采纳 + 自动放行提示，RunCenter 跳转）；前端 32 单测、构建通过 | W2-M1 第 4 步实现 |
 | 2026-10-23 | v1.12 | W3-M2 落地：`supplier_graph`（6 硬闸门短路 + 五维确定性评分 + 权重敏感性 + LLM 复核者 + HITL + finalize 单事务）、`app/scoring/supplier.py` 纯函数、M2 前端供应商看板（闸门条 + SVG 雷达 + 维度明细 + LLM 风险卡）、`scripts/m2_eval.py` 离线基线（30 家：闸门 100%/误报 0%/冷启动 100%/flip 5.55%）、`scripts/smoke_m2.py`；seed 证照基准有效期与闸门标记契约修复 | W3-M2 第 1~5 步实现 |
 | 2026-10-23 | v1.13 | W4 收尾：`docs/EVAL_REPORT.md` + `evals/latest.json`（四套基线汇总、7 条诚实边界、复现命令）；`design/tokens.json` + `design/design.pen`（schema 2.14，6 artboards）+ `preview.html` + `scripts/gen_design_pen.py`；根 `Dockerfile`（多阶段：前端构建→Python 运行时同端口托管）+ compose `api` 服务（迁移自动、healthcheck）+ `docs/DEPLOYMENT.md`；Spec §12 简历数字按实测回填（未测项显式标注） | W4 第 1~4 步实现 |
+| 2026-10-23 | v1.14 | W4 演示闭环：`GET /runs`（历史/分页/待复核关联）、`GET /reviews` 收件箱（模块/verdict/summary）、`GET /runs/{id}/trace`（事件+llm_call）、`GET /rules`（规则+容差只读）、`GET /observability/{summary,evals}`；Run 中心/规则库/可观测页落地，业务页 `?run=` 深链；OpenCode Go 真实网关接入（session 头/dotenv 展开/usage 归因/JSON 容错）；`scripts/demo_runs.py` + `scripts/screenshots.py`（7 张截图）；`docs/RESUME_TEMPLATE.md` | W4 演示闭环实现 |
 
 ---
 
@@ -2618,4 +2634,5 @@ make fmt lint  # ruff + eslint + prettier
 ---
 
 **文档结束**。开发过程中若出现与本规范冲突的实现，先在 §13.3 登记，再改代码。
+
 

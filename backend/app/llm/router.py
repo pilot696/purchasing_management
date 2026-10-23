@@ -1,4 +1,4 @@
-"""模型网关：角色路由 + 缓存 + 重试 + 跨厂商降级 + 记账（Spec §4.2）。
+﻿"""模型网关：角色路由 + 缓存 + 重试 + 跨厂商降级 + 记账（Spec §4.2）。
 
 业务代码只写 `router.complete(role="reason", ...)`，不出现厂商名。
 """
@@ -223,7 +223,11 @@ def build_providers(config: LLMConfig, *, force_fake: bool = False) -> dict[str,
             providers[name] = FakeLLMProvider(name=name)
         else:
             providers[name] = OpenAICompatProvider(
-                name=name, base_url=pcfg.base_url, api_key=pcfg.api_key
+                name=name,
+                base_url=pcfg.base_url,
+                api_key=pcfg.api_key,
+                extra_headers=pcfg.extra_headers,
+                session_header=pcfg.session_header,
             )
     if force_fake:
         providers.setdefault("fake", FakeLLMProvider(name="fake"))
@@ -248,3 +252,4 @@ def get_router() -> ModelRouter:
 
     settings = get_settings()
     return _cached_router(str(settings.llm_config_file), settings.force_fake_llm, str(settings.cache_dir))
+

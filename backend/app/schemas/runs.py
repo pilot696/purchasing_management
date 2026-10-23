@@ -83,3 +83,72 @@ class RunSnapshot(BaseModel):
     run: RunOut
     review: ReviewOut | None = None
     artifact: dict[str, Any] | None = None
+
+
+class RunListItem(BaseModel):
+    id: UUID
+    module: str
+    status: str
+    subject_ref: dict[str, Any] = Field(default_factory=dict)
+    last_seq: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cost_cny: float = 0.0
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    duration_ms: int | None = None
+    error: dict[str, Any] | None = None
+    pending_review_id: UUID | None = None
+    pending_review_kind: str | None = None
+
+
+class RunListResponse(BaseModel):
+    items: list[RunListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class ReviewInboxItem(BaseModel):
+    id: UUID
+    run_id: UUID
+    kind: str
+    status: str
+    created_at: datetime | None = None
+    run_module: str
+    run_status: str
+    subject_ref: dict[str, Any] = Field(default_factory=dict)
+    verdict: str | None = None
+    summary: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class TraceEventOut(BaseModel):
+    seq: int
+    type: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime | None = None
+
+
+class LlmCallOut(BaseModel):
+    id: int
+    step: str
+    provider: str
+    model: str
+    tokens_in: int
+    tokens_out: int
+    cost_cny: float
+    latency_ms: int
+    retry_no: int
+    cache_hit: bool
+    schema_repair: int
+    ok: bool
+    error_code: str | None = None
+    created_at: datetime | None = None
+
+
+class RunTraceResponse(BaseModel):
+    run: RunListItem
+    events: list[TraceEventOut]
+    llm_calls: list[LlmCallOut]
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)

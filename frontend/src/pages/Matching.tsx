@@ -1,5 +1,6 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+﻿import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import PdfDrawer from "../components/PdfDrawer";
 import {
@@ -37,7 +38,8 @@ interface DrawerState {
 export default function Matching() {
   const [poNo, setPoNo] = useState(DEFAULT_PO);
   const [invoiceNo, setInvoiceNo] = useState(DEFAULT_INVOICE);
-  const [runId, setRunId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const [runId, setRunId] = useState<string | null>(() => searchParams.get("run"));
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [drawer, setDrawer] = useState<DrawerState | null>(null);
   const [annotations, setAnnotations] = useState<DocumentAnnotation[]>([]);
@@ -353,3 +355,4 @@ export default function Matching() {
     </div>
   );
 }
+

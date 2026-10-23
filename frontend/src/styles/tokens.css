@@ -44,3 +44,4 @@ body {
 .status-failed { background: #fef2f2; color: var(--run-failed); }
 .status-queued { background: var(--bg-subtle); color: var(--text-secondary); }
 .status-cancelled { background: var(--bg-subtle); color: var(--text-muted); }
+.status-cancelled { background: var(--bg-subtle); color: var(--text-muted); }
