@@ -1,4 +1,4 @@
-﻿# PROGRESS — 里程碑与任务留痕
+# PROGRESS — 里程碑与任务留痕
 
 > 协议来源：`CLAUDE.md` §2。每条留痕必须包含：`[日期时间] [里程碑] 已完成模块 + 关联文件 + 单测通过数 + 下一步待办`。
 > 唯一业务事实来源：`docs/PROJECT_SPEC.md`（v1.1）。
@@ -15,6 +15,16 @@
 ---
 
 ## 留痕记录（倒序追加，最新在上）
+
+### [2026-10-23 20:50] 部署切换：本机后端 + VM 数据库 + 修复全新库迁移
+- **变更文件**：`backend/alembic/env.py`（优先读 `.env` 的 DATABASE_URL）、`backend/alembic/versions/0002_invoice_remark.py`（IF NOT EXISTS 幂等）；
+  本机 `backend/.env` 指向 `192.168.200.188:5432`（gitignored，不入库）；无前端/业务代码改动。
+- **VM 环境**：`docker-compose.db.yml`（pgvector/pg16，仅 DB）；ping / TCP 5432 / 密码认证均验证通过。
+- **核心修复**：`alembic` 之前只读 `os.getenv`，切库会静默迁移到旧 localhost 库；0002 在全新库上重复加 `remark` 列导致整个 upgrade 事务回滚。
+- **验证结果**：
+  - VM 库：`alembic upgrade head` 成功 → **43 张表** + `vector`/`pg_trgm`；seed 成功 → supplier 30 / SKU 100 / history 300 / PR 120 / PO 80 / invoice 80 / doc 237 / rule 17；
+  - 本机后端连 VM 库跑真实 e2e：`SMOKE_M1=OK`、`SMOKE_M2=OK`（真实 LLM，tokens 1657/2538、¥0.0126）、`SMOKE_M3=OK`；
+  - VM 侧 `agent_run` 记录 m1/m2/m3 各 1 条 succeeded，pending=0；旧 localhost 库保留作回滚。
 
 ### [2026-10-23 20:05] W4 演示闭环：运行历史/收件箱/规则库/可观测 + 真实网关 + 截图
 - **变更文件**：
