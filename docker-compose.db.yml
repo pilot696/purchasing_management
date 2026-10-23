@@ -1,0 +1,48 @@
+# 只跑数据库（PostgreSQL 16 + pgvector）——放在 Linux 虚拟机上
+#
+# 在 VM 上：保存为 docker-compose.yml，然后
+#   docker compose up -d
+#
+# 本机（Windows）后端通过 VM 的 IP 连它：
+#   backend/.env:
+#     DATABASE_URL=postgresql+psycopg://app:app@<VM_IP>:5432/procurement
+#
+# 安全建议：
+#   - 改 POSTGRES_PASSWORD（本机 backend/.env 同步改）
+#   - VM 防火墙只允许你本机 IP 访问 5432：
+#       sudo ufw allow from <本机IP> to any port 5432 proto tcp
+#   - 或者更稳：DB_BIND=127.0.0.1 + SSH 隧道
+#       docker compose up -d 之前 export DB_BIND=127.0.0.1
+#       本机：ssh -L 5432:127.0.0.1:5432 <user>@<VM_IP>
+#       然后 backend/.env 用 localhost:5432
+
+name: procurement-db
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: procurement-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-procurement}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      # 默认对宿主机所有网卡开放；只想给 SSH 隧道用时设置 DB_BIND=127.0.0.1
+      - "${DB_BIND:-0.0.0.0}:${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pgdata:
