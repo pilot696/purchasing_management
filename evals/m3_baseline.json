@@ -74,7 +74,7 @@
       "fn": 0
     },
     "mismatches_sample": [],
-    "elapsed_ms": 1.55
+    "elapsed_ms": 2.1
   },
   "greedy": {
     "overall_accuracy": 1.0,
@@ -87,5 +87,5 @@
     "匈牙利相对贪心的优势由单测 test_hungarian_beats_greedy_on_global_conflict 用冲突得分矩阵证明。",
     "本基线只覆盖确定性路径（不调用 LLM），扫描件抽取准确率见 extraction_baseline.json。"
   ],
-  "generated_at": "2026-10-23T15:25:12"
+  "generated_at": "2026-10-23T17:25:14"
 }

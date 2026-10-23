@@ -16,6 +16,26 @@
 
 ## 留痕记录（倒序追加，最新在上）
 
+### [2026-10-23 17:35] W2-M1 第 1~3 步：规则 DSL + 混合检索 + 预检图 + M1 基线
+- **变更文件**：
+  - 新增 `backend/app/rules/{engine,loader}.py`、`backend/app/retrieval/search.py`、`backend/app/agents/precheck.py`、`backend/tests/{test_rules,test_precheck_graph}.py`、`scripts/{m1_eval,smoke_m1}.py`、`evals/m1_baseline.json`
+  - 修改 `backend/app/services/runs.py`（M1/M3 共用 `_execute_graph`，自动放行）、`main.py`（装配 M1 图）、`seed/dataset.py`（规则与 gold 对齐、SKU 规格跟随品名）、`scripts/smoke_e2e.py`（demo 冒烟改走 m2 占位图）
+- **GitNexus 影响面**：`RunService` 的图分派重构（m1/m3 共用 HITL/finalize 流程）影响 `/runs` 全部模块；`seed/dataset.py` 的规则/规格调整改变数据工厂输出（两套基线已重跑）；`detect_changes` 见提交记录。
+- **核心设计执行**：
+  - **规则 DSL**（`app/rules/engine.py`）：JSONLogic **白名单**求值器，自定义 `required`/`fn` 算子；表达式为真=命中；未声明算子直接抛错；输出 finding 带 `rule_code/evidence`；
+  - 数据/规则对齐：qty 规则 type 改 `stat_outlier`、预算规则 severity 与 gold 一致、owner 字段移入 spec、ADMIN 增加数据敏感 policy 规则、补齐 SAAS/MKT 的预算/数量通用规则（共 17 条）；
+  - **混合检索**（`app/retrieval/search.py`）：词法(pg_trgm) + 精确名/别名 + 结构化(规格桶) 三路 + RRF；向量 leg 留可注入位（当前网关无 embed 角色，ADR-020）；
+  - **预检图**：`load_subject → retrieve → rules_engine → semantic_resolve → compose_report →（interrupt）→ finalize`；
+    无 findings/patches 时 **自动放行**（不创建复核任务），否则 HITL 编辑补丁；finalize 才写 `pr_item.spec` + `audit_log` + artifact + `pr.status=prechecked`；
+  - `scripts/m1_eval.py` 产出 `evals/m1_baseline.json`；`scripts/smoke_m1.py` 覆盖真实 HTTP+SSE+RBAC+HITL 全链路。
+- **本轮踩坑（GOTCHAS G-029~G-033）**：规则求值 dict 字面量提前比较、psycopg NULL 参数类型推断与 JSONB CAST、`pr.status` varchar(16) 溢出、目录同名不同配导致检索指标失真、demo 冒烟被真实图接管。
+- **验证结果**：
+  - **M1 基线（120 条 gold）**：verdict **100%**、findings 精确匹配 **100%**（micro P/R/F1=1.0）、检索 top-1 **100%（105 条无歧义样本）**、平均 60% 用例产生补丁（共 120 条）、耗时 1.3s；
+  - **M3 基线回归**：overall/F1/行对齐仍 **100%**；
+  - 单测 **75 passed / 15 skipped**；集成 **14 passed / 1 skipped**；
+  - 真实 e2e：`SMOKE_M1=OK`（verdict=needs_info，findings=2/patches=1，requester 403→buyer 200，applied_patches=1）、`SMOKE_M3=OK`、`SMOKE_E2E=OK`（m2 占位图）。
+- **下一步 (Next)**：M1 前端（字段树 + 结论横幅 + findings + 可勾选补丁 + 证据面板）→ 然后 W3-M2
+
 ### [2026-10-23 17:15] W1-M3 第 6 步 + 前端：M3 工作台（对齐表 + 差异清单 + PDF 抽屉 + HITL）
 - **变更文件**：
   - 前端：新增 `frontend/src/components/PdfDrawer.tsx`、`frontend/src/lib/m3.ts`(+`m3.test.ts`)，重写 `pages/Matching.tsx`，修改 `lib/api.ts`（文档/快照接口）、`lib/events.ts`（ReviewTask 载荷）、`pages/RunCenter.tsx`（M3 卡片跳转）

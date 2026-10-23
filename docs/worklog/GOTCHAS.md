@@ -260,4 +260,39 @@
 - **修复手段**：`annotationBoxStyle` 统一 `parseFloat((v*100).toFixed(4))`，既消掉尾巴又保留 0.01% 精度；单测改为断言精确字符串。
 - **防回归**：`frontend/src/lib/m3.test.ts::annotationBoxStyle`（含负值/越界钳制用例）。
 
+## G-029｜规则求值器里 dict 字面量的"提前求值"陷阱
+- **问题现象**：MKT 类 PR 一跑规则就抛 `TypeError: '>' not supported between NoneType and bool`，但规则表达的是 `==`。
+- **根因定位**：比较算子写成 `{">": left > right, "==": left == right, ...}[operator]`，**dict 字面量会先求值所有分支**，
+  即使 operator 是 `==`，`None > True` 也已经先炸了。
+- **修复手段**：改为 if/elif 逐分支求值；同时把比较类型错误包成 `RuleEvalError`（规则问题显式报错，不静默放过）。
+- **防回归**：`test_rules.py::test_comparisons_do_not_crash_on_type_mix`、`test_operator_whitelist_rejects_unknown`。
+
+## G-030｜psycopg 参数类型推断失败：`$2 IS NULL` 与 `jsonb_build_array($1)`
+- **问题现象**：M1 检索 SQL 报 `AmbiguousParameter: could not determine data type of parameter`。
+- **根因定位**：PG 服务端无法从 `$2 IS NULL OR col = $2` 推断参数类型；`jsonb_build_array($1)` 同样无法推断 text 入参。
+- **修复手段**：SQL 动态拼接可选条件（`AND category_code=:category` 只在有值时拼接），
+  JSONB 入参显式 `CAST(:item_name AS text)`；所有可选参数不再依赖 PG 推断。
+- **防回归**：`scripts/m1_eval.py` 全量跑通（120 条 × 3 路检索）。
+
+## G-031｜`pr.status` 是 varchar(16)：写 `prechecked_needs_info` 直接 DataError
+- **问题现象**：M1 预检 finalize 在 commit 时抛 `StringDataRightTruncation`，事务回滚、artifact 没写。
+- **根因定位**：`pr.status` 定义 varchar(16)，我写入了 21 字符的 `prechecked_needs_info`；"看起来只是一次赋值"的长度问题要到 flush 才暴露。
+- **修复手段**：状态统一写 `prechecked`；"是否需要补信息"由 report.findings / artifact 表达，不塞进状态枚举。
+- **防回归**：`test_precheck_graph.py::test_precheck_graph_accept_applies_patch`（断言 `pr.status.startswith("prechecked")`）。
+
+## G-032｜目录"同名不同配"污染检索指标：同名 SKU 规格不一致
+- **问题现象**：M1 检索 top-1 只有 49.5%，但抽查发现同名 SKU 的 **spec_bucket 不一样**。
+- **根因定位**：数据工厂里品名按 `i % len(name_pool)`、规格按 `i % len(spec_pool)` 独立取模（10 与 4/3 互质周期不一致），
+  生成出"同一品名、不同内存/周期"的重复 SKU；这既不符合真实目录，也让"同名等价类"判定永远失败。
+- **修复手段**：规格改为跟随品名索引（`spec_pool[name_index % len(spec_pool)]`），同名 SKU 规格一致；
+  检索评测按"sku_code 相等 或 (name, spec_bucket) 相同"的等价类判定。
+- **防回归**：`scripts/m1_eval.py` 的 `retrieval_top1_accuracy`（修复后 100%，样本 105）。
+
+## G-033｜demo 冒烟被真实图"接管"：`smoke_e2e.py` 用 m1 占位 subject 直接崩
+- **问题现象**：M1 图上线后，原 demo 冒烟（`POST /runs {"module":"m1","subject":{"pr_id":...}}`）报
+  `M1 运行需要 subject.pr_no`，而这条冒烟本意是覆盖 SSE/HITL/恢复契约，不关心业务模块。
+- **根因定位**：架构演进（m1 从占位节点换成真实图）后，回归脚本仍把 m1 当"任意 subject"的演示模块。
+- **修复手段**：demo 冒烟改走仍是占位路径的 `module=m2` + supplier subject；真实 M1 链路由 `smoke_m1.py` 覆盖。
+- **防回归**：`scripts/smoke_e2e.py`（SSE/中断/恢复）、`scripts/smoke_m1.py`（真实 M1）、`scripts/smoke_m3.py`（真实 M3）三件套。
+
 <!-- 追加位置：新踩坑写在本行上方 -->

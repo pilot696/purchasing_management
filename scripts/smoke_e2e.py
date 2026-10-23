@@ -1,4 +1,4 @@
-"""端到端冒烟（真实 HTTP + SSE + HITL 恢复 + 快照校验）。
+﻿"""端到端冒烟（真实 HTTP + SSE + HITL 恢复 + 快照校验）。
 
 前置：PostgreSQL 已启动并完成 `alembic upgrade head`，API 已在 --base 端口运行。
 
@@ -107,7 +107,7 @@ async def main() -> None:
 
         created = await client.post(
             f"{base}/api/v1/runs",
-            json={"module": "m1", "subject": {"pr_id": "PR-E2E-0001"}},
+            json={"module": "m2", "subject": {"supplier_id": "SUP-E2E-0001"}},
             headers={"X-Demo-Role": "buyer"},
         )
         if created.status_code != 202:
@@ -184,3 +184,4 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
+

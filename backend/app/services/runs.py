@@ -50,6 +50,7 @@ class RunService:
         resume_timeout_s: float = 600,
         sleep=asyncio.sleep,
         matching_graph: Any | None = None,
+        precheck_graph: Any | None = None,
     ) -> None:
         self._bus = bus
         self._sf = session_factory
@@ -57,6 +58,7 @@ class RunService:
         self._resume_timeout_s = resume_timeout_s
         self._sleep = sleep
         self._matching = matching_graph
+        self._precheck = precheck_graph
         self._handles: dict[UUID, _Handle] = {}
 
     # ------------------------------------------------------------------ 生命周期
@@ -88,9 +90,10 @@ class RunService:
 
     async def _execute(self, handle: _Handle, module: str, subject: dict[str, Any]) -> None:
         run_id = handle.run_id
-        # M3 由 LangGraph 图驱动（W1 起）；M1/M2 仍走演示节点，W2/W3 替换
-        if module == "m3" and self._matching is not None:
-            await self._execute_m3(handle, subject)
+        # M1/M3 由 LangGraph 图驱动；M2 仍走演示节点，W3 替换
+        graph = self._matching if module == "m3" else self._precheck if module == "m1" else None
+        if graph is not None:
+            await self._execute_graph(handle, subject, graph)
             return
         try:
             await self._set_status(run_id, "running")
@@ -165,26 +168,51 @@ class RunService:
         finally:
             self._handles.pop(run_id, None)
 
-    async def _execute_m3(self, handle: _Handle, subject: dict[str, Any]) -> None:
-        """M3：LangGraph 跑到 compose_report 后挂起 → 人工决策 → 恢复 finalize（同一事务写会计事实）。"""
+    async def _execute_graph(self, handle: _Handle, subject: dict[str, Any], graph: Any) -> None:
+        """M1/M3 共用的图运行：跑到 interrupt_before(finalize) → HITL（或自动放行）→ finalize。"""
         run_id = handle.run_id
         config = {"configurable": {"thread_id": str(run_id)}}
         try:
             await self._set_status(run_id, "running")
-            state = await self._matching.ainvoke({"run_id": str(run_id), "subject": subject}, config)
+            state = await graph.ainvoke({"run_id": str(run_id), "subject": subject}, config)
             report = state.get("report") or {}
+            if not report.get("requires_review", True):
+                # 无问题且无需补字段：跳过人工，直接 finalize（仍留下 artifact 与事件）
+                await graph.aupdate_state(
+                    config, {"decision": "accept", "reviewer_note": "auto: 无需人工", "review_id": None}
+                )
+                final_state = await graph.ainvoke(None, config)
+                await self._bus.emit(
+                    run_id,
+                    "run.end",
+                    {
+                        "status": "succeeded",
+                        "artifact_id": final_state.get("artifact_id"),
+                        "auto": True,
+                    },
+                )
+                return
+
             review_id = uuid.uuid4()
+            kind = str(report.get("review_kind") or "apply_patch")
             review_payload = {
-                "kind": "release_or_hold",
+                "kind": kind,
                 "review_id": str(review_id),
-                "title": f"M3 三单匹配：{report.get('po_no')} ↔ {report.get('invoice_no')}",
-                "overall": report.get("overall"),
+                "title": (
+                    f"M1 采购预检：{report.get('pr_no')}"
+                    if report.get("module") == "m1"
+                    else f"M3 三单匹配：{report.get('po_no')} ↔ {report.get('invoice_no')}"
+                ),
+                "overall": report.get("verdict") or report.get("overall"),
                 "summary": report.get("summary"),
+                "report": report,
+                "findings": report.get("findings", []),
+                "patches": report.get("patches", []),
                 "diffs": report.get("diffs", []),
                 "line_matches": report.get("line_matches", []),
                 "proposed_changes": report.get("proposed_changes", []),
-                "report": report,
-                "editable": False,
+                "questions": report.get("questions", []),
+                "editable": bool(report.get("editable", False)),
                 "subject": subject,
             }
             handle.review_id = review_id
@@ -193,7 +221,7 @@ class RunService:
                     ReviewTask(
                         id=review_id,
                         run_id=run_id,
-                        kind="release_or_hold",
+                        kind=kind,
                         payload=review_payload,
                         status="pending",
                     )
@@ -208,7 +236,7 @@ class RunService:
                 await self._fail(run_id, "REVIEW_TIMEOUT", "等待人工复核超时")
                 return
 
-            await self._matching.aupdate_state(
+            await graph.aupdate_state(
                 config,
                 {
                     "decision": handle.decision,
@@ -216,7 +244,7 @@ class RunService:
                     "review_id": str(review_id),
                 },
             )
-            final_state = await self._matching.ainvoke(None, config)
+            final_state = await graph.ainvoke(None, config)
             await self._bus.emit(
                 run_id,
                 "run.end",

@@ -59,7 +59,7 @@ RULE_TEMPLATES: tuple[dict[str, Any], ...] = (
         "code": "IT-OWNER-01",
         "type": "required",
         "severity": "medium",
-        "field_path": "items[*].owner",
+        "field_path": "items[*].spec.owner",
         "expression": {"required": ["items[0].owner"]},
         "message_template": "缺少使用人与归属成本中心",
         "policy_clause_ref": "POL-ADM-2024-11#2.1",
@@ -67,7 +67,7 @@ RULE_TEMPLATES: tuple[dict[str, Any], ...] = (
     {
         "category_code": "IT_HW",
         "code": "IT-QTY-STOCK-01",
-        "type": "cross_field",
+        "type": "stat_outlier",
         "severity": "medium",
         "field_path": "items[*].qty",
         "expression": {">": [{"var": "items[0].qty"}, 20]},
@@ -78,7 +78,7 @@ RULE_TEMPLATES: tuple[dict[str, Any], ...] = (
         "category_code": "IT_HW",
         "code": "IT-BUDGET-01",
         "type": "cross_field",
-        "severity": "high",
+        "severity": "medium",
         "field_path": "estimated_amount",
         "expression": {">": [{"var": "estimated_amount"}, {"fn": "budget_available"}]},
         "message_template": "预估金额超出部门可用预算",
@@ -110,7 +110,7 @@ RULE_TEMPLATES: tuple[dict[str, Any], ...] = (
         "type": "enum",
         "severity": "medium",
         "field_path": "items[*].unit",
-        "expression": {"in": [{"var": "items[0].unit"}, ["个", "台", "套", "箱", "件"]]},
+        "expression": {"not": {"in": [{"var": "items[0].unit"}, ["个", "台", "套", "箱", "件"]]}},
         "message_template": "计量单位不合法，需使用标准单位",
         "policy_clause_ref": "POL-ADM-2024-11#1.3",
     },
@@ -118,11 +118,21 @@ RULE_TEMPLATES: tuple[dict[str, Any], ...] = (
         "category_code": "ADMIN",
         "code": "ADM-BUDGET-01",
         "type": "cross_field",
-        "severity": "high",
+        "severity": "medium",
         "field_path": "estimated_amount",
         "expression": {">": [{"var": "estimated_amount"}, {"fn": "budget_available"}]},
         "message_template": "预估金额超出部门可用预算",
         "policy_clause_ref": "POL-FIN-2025-01#3.2",
+    },
+    {
+        "category_code": "ADMIN",
+        "code": "ADM-POLICY-01",
+        "type": "policy_ref",
+        "severity": "high",
+        "field_path": "items[*].spec.data_scope",
+        "expression": {"in": [{"var": "items[0].spec.data_scope"}, ["客户数据", "财务数据"]]},
+        "message_template": "涉及敏感数据的行政采购需走信息安全审批",
+        "policy_clause_ref": "POL-SEC-2025-02#5.2",
     },
     {
         "category_code": "MKT_OUTSOURCE",
@@ -144,6 +154,57 @@ RULE_TEMPLATES: tuple[dict[str, Any], ...] = (
         "message_template": "关联方交易需额外披露并走专项审批",
         "policy_clause_ref": "POL-CMP-2025-01#7.4",
     },
+    # 跨品类通用规则：数量异常 / 超预算（gold 的 cross_field、stat_outlier 对所有品类生效）
+    {
+        "category_code": "SAAS",
+        "code": "SAAS-BUDGET-01",
+        "type": "cross_field",
+        "severity": "medium",
+        "field_path": "estimated_amount",
+        "expression": {">": [{"var": "estimated_amount"}, {"fn": "budget_available"}]},
+        "message_template": "预估金额超出部门可用预算",
+        "policy_clause_ref": "POL-FIN-2025-01#3.2",
+    },
+    {
+        "category_code": "MKT_OUTSOURCE",
+        "code": "MKT-BUDGET-01",
+        "type": "cross_field",
+        "severity": "medium",
+        "field_path": "estimated_amount",
+        "expression": {">": [{"var": "estimated_amount"}, {"fn": "budget_available"}]},
+        "message_template": "预估金额超出部门可用预算",
+        "policy_clause_ref": "POL-FIN-2025-01#3.2",
+    },
+    {
+        "category_code": "SAAS",
+        "code": "SAAS-QTY-01",
+        "type": "stat_outlier",
+        "severity": "medium",
+        "field_path": "items[*].qty",
+        "expression": {">": [{"var": "items[0].qty"}, 20]},
+        "message_template": "申请数量超过批量阈值，需说明合理性",
+        "policy_clause_ref": "POL-IT-2025-03#6.1",
+    },
+    {
+        "category_code": "ADMIN",
+        "code": "ADM-QTY-01",
+        "type": "stat_outlier",
+        "severity": "medium",
+        "field_path": "items[*].qty",
+        "expression": {">": [{"var": "items[0].qty"}, 20]},
+        "message_template": "申请数量超过批量阈值，需说明合理性",
+        "policy_clause_ref": "POL-IT-2025-03#6.1",
+    },
+    {
+        "category_code": "MKT_OUTSOURCE",
+        "code": "MKT-QTY-01",
+        "type": "stat_outlier",
+        "severity": "medium",
+        "field_path": "items[*].qty",
+        "expression": {">": [{"var": "items[0].qty"}, 20]},
+        "message_template": "申请数量超过批量阈值，需说明合理性",
+        "policy_clause_ref": "POL-IT-2025-03#6.1",
+    },
 )
 
 SKU_SPEC_POOL: dict[str, list[dict[str, Any]]] = {
@@ -155,7 +216,7 @@ SKU_SPEC_POOL: dict[str, list[dict[str, Any]]] = {
     ],
     "SAAS": [
         {"period_months": 12, "seats": 20, "data_scope": "内部数据"},
-        {"period_months": 12, "seats": 50, "data_scope": "客户数据"},
+        {"period_months": 12, "seats": 50, "data_scope": "内部数据"},
         {"period_months": 6, "seats": 10, "data_scope": "内部数据"},
     ],
     "ADMIN": [
@@ -372,8 +433,10 @@ def _build_master(rng, cfg: SeedConfig) -> dict[str, Any]:
         spec_pool = SKU_SPEC_POOL[code]
         name_pool = SKU_NAME_POOL[code]
         for i in range(per_category):
-            spec = dict(spec_pool[i % len(spec_pool)])
-            name = name_pool[i % len(name_pool)]
+            # 规格跟随"品名"而不是全局索引：同名 SKU 的规格一致（否则目录出现同名不同配，检索评测失真）
+            name_index = i % len(name_pool)
+            spec = dict(spec_pool[name_index % len(spec_pool)])
+            name = name_pool[name_index]
             if code == "IT_HW":
                 bucket = f"laptop/{spec['memory_gb']}g/{spec['storage_gb']}g"
                 if spec.get("size_inch", 0) == 0:
@@ -583,8 +646,8 @@ def _build_prs(rng, cfg: SeedConfig, master: dict[str, Any]) -> tuple[list[dict[
         over_budget = estimated > available
         if anomaly == "over_budget":
             over_budget = True
+            # 金额调高但保留正常数量（否则会同时触发"数量异常"规则，产生 gold 未建模的 finding）
             estimated = money(available * 1.4) if available > 0 else 250_000.0
-            qty = max(1, int(estimated / max(unit_price, 1)))
 
         pr_no = f"PR-{FISCAL_YEAR}-{i + 1:04d}"
         prs.append(
@@ -616,7 +679,9 @@ def _build_prs(rng, cfg: SeedConfig, master: dict[str, Any]) -> tuple[list[dict[
         )
         findings: list[dict[str, Any]] = []
         for path in missing:
-            findings.append({"type": "required", "field": f"/{path.replace('.', '/')}", "severity": "high"})
+            # owner 属于"建议补全"级别（规则 IT-OWNER-01 = medium），其余必填字段为 high
+            severity = "medium" if path.endswith("spec.owner") else "high"
+            findings.append({"type": "required", "field": f"/{path.replace('.', '/')}", "severity": severity})
         if ambiguity:
             findings.append({"type": "ambiguity", "field": "/items/0/item_name", "severity": "high"})
         if over_budget:

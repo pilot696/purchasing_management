@@ -383,6 +383,9 @@ def compose_report(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
     report = {
         "module": "m3",
         "graph_version": GRAPH_VERSION,
+        "review_kind": "release_or_hold",
+        "requires_review": True,
+        "editable": False,
         "po_no": po["po_no"],
         "invoice_no": invoice["invoice_no"],
         "category_code": state.get("category_code"),

@@ -22,9 +22,9 @@
 - **数据工厂已验证**（W1-M3 第 1 步）：`scripts/seed.py --seed 42` 生成 **230 份 PDF（含 23 份扫描件）/ 8.5MB**、
   120 份 M1 gold、80 组 M3 gold；DB 落 30 供应商 / 100 SKU / 300 历史成交行 / 120 PR / 80 组三单。
 
-尚未落地（按 Spec §11 里程碑）：M1 规则与检索（W2）、M2 评分（W3）、pen.dev 画布与部署（W4）。
-M3 已端到端跑通（抽取 → 对齐 → 容差 → HITL → finalize → 前端工作台）；M1/M2 仍为占位图，W2/W3 替换，
-事件/复核/事务契约不变。
+尚未落地（按 Spec §11 里程碑）：M1 前端（字段树 + 结论横幅 + 可勾选补丁 + 证据面板，W2 收尾）、M2 评分（W3）、
+pen.dev 画布与部署（W4）。M3 已端到端跑通（抽取 → 对齐 → 容差 → HITL → finalize → 前端工作台）；
+M1 后端已跑通（规则 DSL + 混合检索 + 预检图 + HITL 补字段 + 基线评测），W2 补前端后进入 M2。
 
 M3 抽取管线（W1 第 2~3 步）已完成：`DocumentRouter`（文本层占比 + 模板锚点分流）、`pdf_native`
 （表格结构优先、正则兜底，产出 Pydantic 模型 + 归一化 bbox）、确定性校验器（算术/税率/日期/数量）、
@@ -46,6 +46,13 @@ M3 工作台前端（W1 第 6 步）已完成：`/matching` 页面支持输入 P
 对齐表（PO 行 / 发票行 / 方法 / 拟核销 / 剩余 / 状态）+ 差异卡片（severity 色/规则/建议）+ 财务放行/挂起；
 点「查看发票」打开 PDF 抽屉（服务端渲染单页 PNG + 归一化 bbox 高亮，ADR-019）。
 `scripts/smoke_m3.py` 一条命令验证全链路（run → interrupt → PDF/注解 → financing 放行 → artifact）。
+
+M1 预检后端（W2 第 1~3 步）已完成：规则 DSL（`app/rules/engine.py`，JSONLogic 白名单 + `required`/`fn` 算子）、
+混合检索（`app/retrieval/search.py`：pg_trgm 词法 + 精确名/别名 + 规格桶结构化，RRF 融合，向量 leg 待接入）、
+`precheck_graph`（`load → retrieve → rules_engine → semantic_resolve → compose → interrupt → finalize`，无问题自动放行）、
+补丁在 finalize 写回 `pr_item.spec` 并留 `audit_log`。
+基线：120 条 gold 上 verdict/findings **100%**、检索 top-1 **100%**（`scripts/m1_eval.py`）；
+`scripts/smoke_m1.py` 验证真实 HTTP+SSE+HITL 全链路。
 
 ## 快速开始（Windows）
 

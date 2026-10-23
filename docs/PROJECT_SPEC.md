@@ -955,6 +955,11 @@ flowchart LR
 
 ### 5.4 检索层设计（三语料 + 混合 + 价格基准）
 
+> **W2 实现口径（v1.10，ADR-020）**：当前网关只有 `complete`、无 `embed` 角色，因此 `hybrid_search` 先实现
+> **三路确定性检索 + RRF**：`lexical`（pg_trgm similarity，中文短名可用）、`exact`（名称完全相等 / 别名字典命中）、
+> `structured`（`spec_bucket` 等值）；`rrf_fuse` 为纯函数（k=60，可单测），向量 leg 保留为可注入 ranking。
+> 代码：`app/retrieval/search.py`；评测：`scripts/m1_eval.py`（检索 top-1 等价类准确率 100%，105 样本）。
+
 #### 5.4.1 语料与粒度（对应 §3.3）
 
 | 语料 | 一条是什么 | 为什么这样切 | 向量化字段 |
@@ -2485,6 +2490,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-23 | v1.7 | M3 匹配层落地：`normalizer`（别名词典 + 规格抽取 → `spec_bucket`）、`align`（L1/L2/L3 + 匈牙利 + 贪心消融）、`tolerances`（`min(ordered, received)` 上限 + 尾差基准 + 金额去重）；扫描件改为**精确配额**分配；M3 基线：overall 100%、6 类 diff F1 100%、行对齐 F1 100% | W1-M3 第 4 步实现 |
 | 2026-10-23 | v1.8 | M3 `matching_graph`（LangGraph：load→normalize→align→reconcile→compose→interrupt→finalize）+ HITL + finalize 单事务/幂等；`invoice.remark` 列（alembic 0002，terms_conflict 判定输入）；RunService 按 module 分派图；图级集成测试 3 条（放行/挂起/RunService 全流程） | W1-M3 第 5 步实现 |
 | 2026-10-23 | v1.9 | M3 前端落地（对齐表 + 差异清单 + HITL 放行/挂起 + 服务端 PNG PDF 抽屉 + bbox 覆盖层）；M3 报告补齐 `documents/po_lines/invoice_lines` 字段；新增 `GET /documents/{id}/file`、`/page.png`；`scripts/smoke_m3.py` 端到端冒烟 | W1-M3 第 6 步 + 前端 |
+| 2026-10-23 | v1.10 | W2-M1 后端落地：规则 DSL（JSONLogic 白名单 + `required`/`fn` 算子）、混合检索（词法/精确/结构化 + RRF，向量 leg 待 embed）、`precheck_graph`（五节点 + 自动放行 + 补丁 finalize）、`scripts/m1_eval.py` 基线（verdict/findings 100%、检索 top-1 100%）、`scripts/smoke_m1.py`；数据工厂规则与 gold 对齐（17 条规则） | W2-M1 第 1~3 步实现 |
 
 ---
 

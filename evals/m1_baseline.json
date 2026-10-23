@@ -1,0 +1,35 @@
+{
+  "cases": 120,
+  "verdict_accuracy": 1.0,
+  "findings_exact_accuracy": 1.0,
+  "finding_micro": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "tp": 112,
+    "fp": 0,
+    "fn": 0
+  },
+  "per_anomaly_verdict_accuracy": {
+    "ambiguity": 1.0,
+    "clean": 1.0,
+    "missing_field": 1.0,
+    "over_budget": 1.0,
+    "policy_block": 1.0,
+    "qty_outlier": 1.0
+  },
+  "retrieval_top1_accuracy": 1.0,
+  "retrieval_samples": 105,
+  "patches": {
+    "cases_with_patches": 60,
+    "patch_total": 120
+  },
+  "mismatches_sample": [],
+  "elapsed_ms": 1567.34,
+  "generated_at": "2026-10-23T17:25:13",
+  "notes": [
+    "M1 走确定性链路（规则 DSL + 词法/结构化 RRF 检索 + 确定性歧义判定），不调用 LLM；",
+    "gold 与数据工厂同源，指标代表『规则实现与 gold 契约一致』；检索 top-1 是真实 DB 数据上的检索质量；",
+    "向量 leg 待 embedding provider 接入（ADR-020），当前 RRF 由词法 + 结构化两路融合。"
+  ]
+}

@@ -12,6 +12,30 @@
 
 ## 决策记录（倒序追加，最新在上）
 
+### ADR-020｜M1 检索先用「词法 + 精确 + 结构化」三路 RRF，向量 leg 留可注入位
+- **触发原因**：Spec §5.3 要求 pgvector + 全文 + RRF；但当前 LLM 网关只有 `complete`，没有 `embed` 角色，
+  seed 也未落 embedding；直接造"伪向量"检索会得出不可解释的指标。
+- **GitNexus impact**：`app/retrieval/search.py` 为新增层，被 `agents/precheck.py` 与 `scripts/m1_eval.py` 调用；
+  后续接 embedding 只需在 `retrieve_sku_candidates` 加第三/第四路 ranking，不改调用方。
+- **最终方案**：
+  1. 三路确定性检索：pg_trgm 词法（中文短名可用） + 精确名/别名 + 规格桶结构化；
+  2. RRF（k=60，纯函数 `rrf_fuse` 可单测）融合；返回候选带 `sources`（证据面板可展示"命中来源"）；
+  3. 评测按"sku_code 或 (name,spec_bucket) 等价类"判定 top-1；同名不同配的数据问题在 G-032 中修正。
+- **同步更新 Spec**：§5.3 实现口径、§13.3 v1.10；向量 leg 接入后补评测对比。
+
+### ADR-021｜M1 预检图 + 规则 DSL 白名单 + 自动放行
+- **触发原因**：M1 必须"规则确定性优先、LLM 只做语义层"，且无问题 PR 不应强迫人工点一次。
+- **GitNexus impact**：`RunService` 重构为 M1/M3 共用 `_execute_graph`（HITL/自动放行/finalize 统一），
+  影响 `/runs` 所有模块；`rule` 表与 seed 规则变更（17 条）影响数据工厂与 baseline。
+- **最终方案**：
+  1. 规则存 `rule.expression`（JSONB），引擎只实现白名单算子（required/fn/var/比较/in/not/if/cat/len/exists），
+     未声明算子显式抛 `RuleEvalError`；finding 带 `rule_code + policy evidence`；
+  2. 预检图五节点：load → retrieve → rules_engine → semantic_resolve → compose；**决策前不写 spec**；
+  3. `report.requires_review=False`（无 findings/patches）时自动 `decision=accept` 并 finalize，不创建复核任务；
+  4. finalize 单事务：apply patches 到 `pr_item.spec`、写 `audit_log(apply_patch/hold)`、artifact、`pr.status=prechecked/returned`；
+  5. 数据工厂规则与 gold 对齐（qty→stat_outlier、预算 severity、owner 入 spec、补 ADMIN 敏感数据规则等）。
+- **同步更新 Spec**：§5.2/§5.4 实现口径、§13.3 v1.10。
+
 ### ADR-019｜PDF 抽屉用「服务端渲染 PNG + bbox 覆盖层」，暂不引入 PDF.js
 - **触发原因**：Spec §9.4 原计划 PDF.js 渲染 + overlay；W1 要在不引入前端 PDF 渲染依赖的前提下把"抽取字段高亮"跑通，
   并保证 bbox 与底图像素严格对齐。
