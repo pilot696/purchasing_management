@@ -16,6 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.v1 import api_router
 from app.core.config import get_settings
 from app.core.errors import AppError, app_error_handler
+from app.core.loop import ensure_windows_selector_loop
 from app.db.session import db_ping, dispose_engine, get_session_factory
 from app.llm.ledger import LedgerRecorder
 from app.llm.router import get_router
@@ -24,6 +25,9 @@ from app.services.runs import RunService
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIST = BACKEND_ROOT.parent / "frontend" / "dist"
+
+# 兜底：若进程在 import 阶段尚未进入事件循环（脚本/测试），提前切换 Windows 事件循环策略
+ensure_windows_selector_loop()
 
 
 @asynccontextmanager

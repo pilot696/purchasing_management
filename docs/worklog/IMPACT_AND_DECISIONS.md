@@ -12,6 +12,28 @@
 
 ## 决策记录（倒序追加，最新在上）
 
+### ADR-012｜新增 `scripts/smoke_e2e.py` 作为端到端验收脚本
+- **触发原因**：单测与集成测试覆盖不到"HTTP + SSE + HITL 恢复 + 快照"的完整链路；需要一条可在 CI/演示前重复执行的验收命令。
+- **GitNexus impact**：新增文件，无既有符号被修改。
+- **最终方案**：脚本按 Spec §8.2 顺序断言——建 run → 收满 `run.start/node.*/interrupt` → `requester` resume 必须 403
+  → buyer resume 200 → `finalize/run.end` → 快照 `succeeded` + `artifact.decision=accept`；`trust_env=False` 绕过系统代理。
+- **同步更新 Spec**：附录 A.3（验收命令）。
+
+### ADR-011｜Windows 事件循环入口层（`run.py` + `core/loop.py` + conftest）
+- **触发原因**：psycopg 异步驱动不支持 Windows 默认 `ProactorEventLoop`，且 uvicorn 0.54 单进程模式硬编码 Proactor
+  （`loops/asyncio.py`），单纯设置全局 policy 会被 uvicorn 的 `loop_factory` 覆盖 → 应用所有 DB 操作失败（GOTCHAS G-009）。
+- **GitNexus impact**：`impact "create_app"` → **LOW**（depth 1，仅 main.py）；`impact "db_ping"` → **LOW**（上游 healthz/readyz）；
+  改动面为 1 个已有文件（main.py 增加兜底调用）+ 3 个新增/测试文件。
+- **最终方案**：
+  - 新增 `app/core/loop.py::ensure_windows_selector_loop()`；
+  - 新增 `run.py`：单进程时覆盖 `config.get_loop_factory` 为 `asyncio.SelectorEventLoop`，`--reload` 走 uvicorn 的 `use_subprocess=True` 分支；
+  - `app/main.py` 导入时兜底、`tests/conftest.py` 在 pytest-asyncio 建循环前切换；
+  - `scripts/dev.ps1 api` 固定走 `run.py`；README 明令禁止 `python -m uvicorn app.main:app`。
+- **detect_changes（提交前）**：`Risk level: medium`，受影响执行流 `Lifespan → get_settings / get_session_factory / build_providers`
+  （因 main.py 顶层新增 import 与策略兜底调用被标记为 lifespan 变更）。缓解：`pytest` 28 passed + `-m integration` 3 passed +
+  `smoke_e2e.py` 全链路 OK，确认启动链路未回归；medium 的成因是"文件内符号变化"，非调用链断裂。
+- **同步更新 Spec**：§2.3 目录（`backend/run.py`）、§13.3 变更记录 v1.2。
+
 ### ADR-009｜应用状态懒初始化（兼容 lifespan 与 ASGITransport）
 - **触发原因**：单测用 `httpx.ASGITransport` 默认不执行 FastAPI lifespan，导致 `/api/v1/runs` 依赖读 `app.state.runs` 抛 `AttributeError`（P0 测试暴露）。
 - **GitNexus impact**：`app/api/deps.py` 是所有 API 依赖的入口，影响全部 v1 路由；`detect_changes` 待索引可用后补跑。
@@ -54,11 +76,13 @@
 - **最终方案**：`agent_run.last_seq int NOT NULL DEFAULT 0`；写入事件时 `UPDATE agent_run SET last_seq = last_seq + 1 WHERE id = :run_id RETURNING last_seq`，行锁天然串行化，再插入 `run_event`。
 - **同步更新 Spec**：§3.7 `agent_run` 列清单（W0 结束时回写）。
 
-### ADR-002｜Docker daemon 未运行 → 集成测试默认跳过
-- **触发原因**：`docker ps` 报 `npipe:////./pipe/dockerDesktopLinuxEngine` 不存在；PostgreSQL/pgvector 无法启动。
-- **GitNexus impact**：不适用。
-- **最终方案**：测试分两层——`unit`（纯函数/FakeLLM/ASGI 冒烟，默认跑）与 `integration`（需 `DATABASE_URL`，默认 `-m 'not integration'` 跳过）。W1 开工前需启动 Docker Desktop 并跑 `make up migrate`。
-- **同步更新 Spec**：附录 A.3 增加测试分层说明。
+### ADR-002｜Docker daemon 未运行 → 集成测试默认跳过（已解除）
+- **触发原因**：开工时 `docker ps` 报 `npipe:////./pipe/dockerDesktopLinuxEngine` 不存在；PostgreSQL/pgvector 无法启动。
+- **当前状态（2026-10-23 14:00 更新）**：Docker Desktop 已启动，`pgvector/pgvector:pg16` 就绪，`alembic upgrade head` 成功
+  （43 张 public 表 + `vector`/`pg_trgm` 扩展），`pytest -m integration` **3 passed**，`scripts/smoke_e2e.py` **OK**。
+- **保留机制**：测试仍分 `unit` / `integration` 两层，无 `DATABASE_URL` 时集成测试自动 skip（保证 CI 与无 Docker 环境不红）。
+- **遗留**：集成测试复用 dev 库 `procurement`，W1 起拆分 `procurement_test`（用 `EVAL_DB_URL`/独立 compose service）。
+- **同步更新 Spec**：附录 A.3 测试分层说明。
 
 ### ADR-010｜GitNexus 索引与提交前风控已接通（P0 收尾）
 - **触发原因**：`CLAUDE.md`/`AGENTS.md` 要求提交前 `detect_changes`、改动前 `impact`。

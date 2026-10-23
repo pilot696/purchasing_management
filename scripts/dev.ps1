@@ -48,11 +48,13 @@ switch ($Command.ToLower()) {
     }
     'test-int' {
         Set-Location (Join-Path $root 'backend')
+        if (-not $env:DATABASE_URL) { $env:DATABASE_URL = 'postgresql+psycopg://app:app@localhost:5432/procurement' }
         & $python -m pytest -m integration
     }
     'api' {
         Set-Location (Join-Path $root 'backend')
-        & $python -m uvicorn app.main:app --reload --port 8000
+        # 必须走 run.py：先在创建事件循环前切 Windows SelectorEventLoop（GOTCHAS G-009）
+        & $python run.py --port 8000 --reload
     }
     'web-install' {
         Set-Location (Join-Path $root 'frontend')

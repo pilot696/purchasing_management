@@ -12,6 +12,11 @@ os.environ.setdefault("SSE_POLL_INTERVAL_MS", "20")
 
 import pytest  # noqa: E402
 
+from app.core.loop import ensure_windows_selector_loop  # noqa: E402
+
+# pytest-asyncio 会在创建循环前读取策略；必须在任何 async fixture 之前切换（GOTCHAS G-009）
+ensure_windows_selector_loop(force=True)
+
 from app.db.session import db_ping  # noqa: E402
 
 

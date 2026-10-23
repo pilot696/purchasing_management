@@ -85,4 +85,36 @@
   `gitnexus analyze --repair-fts` 重建搜索索引。当前不影响 SOP 要求的 `impact` / `detect_changes`。
 - **防回归**：`doctor.ps1` 不把 FTS 作为判据（判据是 `impact`/`detect-changes` 能否跑通）。
 
+## G-009｜Windows 下 psycopg 异步驱动直接不可用（ProactorEventLoop）
+- **问题现象**：Docker 里 PG 正常、`psql` 能连，但应用 `/healthz` 一直 `db:false`；
+  `pytest -m integration` 3 条全部 skip；直接连库抛
+  `InterfaceError: Psycopg cannot use the 'ProactorEventLoop' to run in async mode. Please use a compatible event loop ...`。
+- **根因定位（两层）**：
+  1. Windows 默认事件循环是 `ProactorEventLoop`，**psycopg 3 的异步连接不支持它**（SQLAlchemy asyncpg/psycopg 同理由此不可用）；
+  2. 即使设置了全局策略也没用：`uvicorn 0.54` 在**单进程**模式下把 loop factory 硬编码成 Proactor——
+     `uvicorn/loops/asyncio.py::asyncio_loop_factory(use_subprocess=False)` 里 `if sys.platform == "win32" and not use_subprocess: return asyncio.ProactorEventLoop`，
+     而 `Server.run()` 通过 `asyncio_run(..., loop_factory=self.config.get_loop_factory())` 使用它，绕过 `set_event_loop_policy`。
+- **修复手段**（三处入口，缺一不可）：
+  1. `backend/run.py`：单进程启动时把 `config.get_loop_factory` 覆盖为 `lambda: asyncio.SelectorEventLoop`；
+     `--reload` 走 `use_subprocess=True` 分支（uvicorn 自身会选 Selector）；
+  2. `backend/app/core/loop.py::ensure_windows_selector_loop()`：`app/main.py` 导入时兜底、`tests/conftest.py` 在 pytest-asyncio 建循环前调用；
+  3. 脚本（`scripts/smoke_e2e.py`）在 `asyncio.run` 前同样切策略。
+- **防回归**：`backend/tests/test_loop.py`（策略切换 + 幂等）；`scripts/dev.ps1 api` 固定走 `run.py`；README 禁止用 `python -m uvicorn app.main:app`。
+
+## G-010｜httpx 请求本机 API 返回 502，而 PowerShell 请求返回 200
+- **问题现象**：`smoke_e2e.py` 第一步 `/healthz` 拿到 `status=502 body=''`，同端口 `Invoke-WebRequest` 却是 200。
+- **根因定位**：httpx 0.28 在 `trust_env=True`（默认）时会读取**Windows 系统代理设置**（注册表 WinINET），
+  而环境变量里 `HTTP_PROXY` 为空——所以排查时容易误判"没有代理"。公司代理对本机地址返回 502。
+- **修复手段**：本机冒烟/探活统一 `httpx.AsyncClient(trust_env=False)`（`scripts/smoke_e2e.py` 已改）。
+- **防回归**：脚本首步显式校验 `/healthz` 的 `db` 字段；失败时打印 `status + body` 便于区分"代理 502"与"应用 503"。
+- **教训（可讲）**：`Invoke-WebRequest 200 / httpx 502` 这种"客户端不一致"优先怀疑代理与连接复用，而不是先怀疑服务端。
+
+## G-011｜`docker pull` 拉取 pgvector 镜像中途 EOF
+- **问题现象**：`docker compose up -d db` 报
+  `failed to copy: httpReadSeeker: failed open: ... blobs/sha256:... EOF`，compose exit 1。
+- **根因定位**：Docker Hub 拉取大层（631MB 镜像）时网络中断；Docker 会保留已完成层，重试可续传。
+- **修复手段**：`docker pull pgvector/pgvector:pg16` 重试 1 次即成功（同层缓存生效），再 `docker compose up -d db`；
+  DB 健康检查 `pg_isready` 通过后再跑迁移。
+- **防回归**：`scripts/dev.ps1 up` 之后 `docker compose ps` 看到 `healthy` 才继续；`doctor.ps1` 把 5432 端口探测作为判据。
+
 <!-- 追加位置：新踩坑写在本行上方 -->

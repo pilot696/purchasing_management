@@ -9,12 +9,31 @@
 |---|---|
 | 当前里程碑 | **W0（骨架）— 已完成（除依赖 Docker 的端到端冒烟）** |
 | 当前分支/提交 | `main` 首个提交（P0 全量） |
-| 最近一次全量测试 | 后端 26 passed / 3 skipped（0.42s）；前端 18 passed；`tsc --noEmit` 0；`vite build` 通过 |
+| 最近一次全量测试 | 后端 **28 passed / 3 skipped**（0.43s）+ **integration 3 passed**（DB 就绪时）；前端 18 passed；`tsc --noEmit` 0；`vite build` 通过；`smoke_e2e.py` OK |
 | 下一步 (Next) | 启动 Docker Desktop → `scripts/dev.ps1 up/migrate` → 跑 3 条 integration 测试 → 端到端 SSE 演示；然后进入 W1-M3（数据工厂 → 抽取 → 对齐 → 容差） |
 
 ---
 
 ## 留痕记录（倒序追加，最新在上）
+
+### [2026-10-23 14:00] W0 收尾：PostgreSQL 启动 + 迁移 + 集成测试 + 端到端 SSE 冒烟全部通过
+- **变更文件**：`backend/run.py`（新增，Windows 事件循环入口）、`backend/app/core/loop.py`（新增）、`backend/app/main.py`（导入时兜底切策略）、`backend/tests/conftest.py`（pytest 前切策略）、`scripts/smoke_e2e.py`（新增，端到端冒烟）、`scripts/dev.ps1`（api / test-int 命令修正）、`scripts/_debug_db.py`（临时调试脚本，已删除）
+- **GitNexus 影响面**：`impact "create_app"` → **LOW**（depth 1，仅 main.py）；`impact "db_ping"` → **LOW**（上游 healthz/readyz）；`detect-changes` 结果见提交前记录
+- **环境打通**：
+  - Docker daemon 就绪（Server 29.1.3），`pgvector/pgvector:pg16` 拉取成功（首次 pull 遇 EOF，重试 1 次成功，共 631MB）
+  - `alembic upgrade head`：`0001_initial` 应用成功；**43 张 public 表**（42 业务表 + `alembic_version`）、扩展 `vector` + `pg_trgm` 就位；三张语料表 `embedding` 为 `vector` 类型；v1.1 的 `requires_gr` / `last_seq` 列存在
+- **关键排障（GOTCHAS G-009）**：端到端一开始失败，根因不是密码/端口，而是 **psycopg 异步驱动不支持 Windows 默认 ProactorEventLoop**；
+  uvicorn 0.54 又在单进程模式把 loop factory 硬编码为 `ProactorEventLoop`。修复：`run.py` 覆盖 `config.get_loop_factory` 为 `SelectorEventLoop`，
+  pytest conftest 与脚本在创建循环前切策略。修复后 `/healthz` 从 `db:false` 变为 `db:true`
+- **验证结果**：
+  - 集成测试 `pytest -m integration` → **3 passed**（seq 并发单调 10 并发不重号 / after_seq 回放 / 未知事件类型拒绝）
+  - 端到端 `scripts/smoke_e2e.py` → **SMOKE_E2E=OK**：
+    run `7a237e94…`，interrupt 前 8 个事件（run.start + 3 节点 ×2 + interrupt），`requester` 复核被 **403** 拦截，
+    buyer resume 后 3 个事件（finalize ×2 + run.end），快照 `status=succeeded`、`artifact.decision=accept`
+  - DB 实证：`review_task = apply_patch/accepted`，`artifact = precheck/accept`，`run_event` 11 条（seq 1..11 连续）
+  - 静态页 `GET /` 200（FastAPI 托管 dist）、`/api/v1/meta/enums` 200、`/api/v1/reviews` 空数组
+- **说明**：集成测试当前复用 dev 库（`procurement`），会在 `agent_run` 留 3 条 `queued` 测试数据；W1 拆 `procurement_test` 库
+- **下一步 (Next)**：W1-M3 第 1 步——数据工厂 master data + ReportLab 发票/PO/合同模板 + 扫描件退化 + gold
 
 ### [2026-10-23 11:57] W0: GitNexus 索引 + 提交前风控（P0 收尾）
 - **变更文件**：`AGENTS.md`、`.claude/skills/gitnexus-*`、`claude.md`（GitNexus 自动写入的规范块）、`README.md`（测试数字修正）、`backend/app/db/session.py`（删除占位函数）、`docs/worklog/*`
