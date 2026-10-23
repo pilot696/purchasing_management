@@ -235,4 +235,15 @@
   对"已核销"的 PO 加 skip 守卫（重复跑集成测试不会因脏数据误判）。
 - **防回归**：`_gold(case_id)` 动态期望 + `m3-0001/0002/0003` 三组覆盖放行/挂起/RunService 全流程。
 
+## G-026｜SSE 终端竞态：run 状态先落库、`run.end` 事件后写入 → 客户端等不到完成信号
+- **问题现象**：e2e 冒烟 `[4/5] resume` 之后只收到 `finalize node.start`，随后 60s 超时"未收到 run.end"；
+  但查 DB：`agent_run.status=succeeded`，事件 seq 9/10/11（node.start/node.end/run.end）齐全——事件没丢，是客户端提前被断开。
+- **根因定位**：SSE 生成器用 `status in TERMINAL and not events: return` 判断收尾；而 `finalize` 是**先 commit `run.status=succeeded`，
+  再 emit `node.end`/`run.end`**。客户端恰好在两次写入之间发起第二次 poll：事件为空 + 状态已终端 → 直接关闭流。
+  属于"状态与事件不在同一事务"的经典竞态，压测/慢库时必现。
+- **修复手段**：终端且无新事件时给 **2×50ms 宽限重查**（期间有新事件则复位计数），仍为空才关闭；
+  比"把 run.end 提前写"更稳，因为不改事件/事务契约。
+- **防回归**：`scripts/smoke_e2e.py`（断言 finalize + run.end + snapshot artifact）；修复后
+  `events_after_resume=3`、`SMOKE_E2E=OK`。
+
 <!-- 追加位置：新踩坑写在本行上方 -->

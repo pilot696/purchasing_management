@@ -53,6 +53,7 @@ async def stream_events(
         yield "retry: 3000\n\n"
         seq = after_seq
         last_heartbeat = time.monotonic()
+        terminal_grace_checks = 0
         while True:
             if await request.is_disconnected():
                 return
@@ -67,7 +68,14 @@ async def stream_events(
 
             status = await service.run_status(run_id)
             if status in TERMINAL_STATUS and not events:
+                # 竞态：run 状态先落库，尾部 node.end / run.end 事件随后才写入。
+                # 直接 return 会丢 run.end（客户端等不到完成信号）→ 给两次 50ms 宽限再关闭。
+                if terminal_grace_checks < 2:
+                    terminal_grace_checks += 1
+                    await asyncio.sleep(0.05)
+                    continue
                 return
+            terminal_grace_checks = 0
 
             if not events:
                 waited = time.monotonic() - last_heartbeat

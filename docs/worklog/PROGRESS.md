@@ -16,6 +16,15 @@
 
 ## 留痕记录（倒序追加，最新在上）
 
+### [2026-10-23 16:00] W1 回归：e2e 冒烟发现并修复 SSE 终端竞态（GOTCHAS G-026）
+- **变更文件**：`backend/app/api/v1/runs.py`（SSE 终端宽限 2×50ms，避免状态落库与尾部事件写入之间的窗口丢 `run.end`）
+- **触发原因**：GitNexus `detect-changes` 对第 5 步给出 **risk=high / 6 条执行流**（`lifespan`、`RunService._execute/_set_status` 等共享生命周期符号），
+  按纪律必须做真实回归，于是启动 API（8012 端口）跑 `scripts/smoke_e2e.py`：首跑复现"未收到 run.end"，修复后通过。
+- **验证结果**：`SMOKE_E2E=OK`（8 events → interrupt → 403 越权 → resume → finalize/run.end → snapshot succeeded/artifact）；
+  unit **66 passed / 12 skipped**；integration **11 passed / 1 skipped**
+- **已知限制（Spec v1.8）**：M3 checkpointer 为进程内 `MemorySaver`，重启后不能恢复中断运行；M3 单张发票/次运行
+- **下一步 (Next)**：M3 前端（对齐表 + PDF 抽屉 + bbox 高亮）→ W2 M1
+
 ### [2026-10-23 15:50] W1-M3 第 5 步：matching_graph（LangGraph）+ HITL + finalize 事务
 - **变更文件**：新增 `backend/app/agents/{__init__,matching}.py`、`backend/alembic/versions/0002_invoice_remark.py`、`backend/tests/test_matching_graph.py`；修改 `backend/app/services/runs.py`（M3 按 module 分派图）、`backend/app/main.py`（装配图）、`backend/app/models/tables.py`（`invoice.remark`）、`backend/app/seed/persist.py`（写入 remark）
 - **GitNexus 影响面**：`RunService._execute` 增加 M3 分支、`_Handle` 增加 `review_id`；`main.py` lifespan 新增图装配；`Invoice` ORM 加列需迁移（0002），影响 persist/graph/文档接口读取。`detect_changes` 见提交记录。
