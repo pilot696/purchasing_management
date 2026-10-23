@@ -49,6 +49,10 @@ export interface ReviewTask {
   patch?: FieldPatch[];
   questions?: string[];
   editable?: boolean;
+  /** M3 release_or_hold 载荷（Spec §9.4）：overall + 完整匹配报告 */
+  overall?: string;
+  summary?: string;
+  report?: Record<string, unknown>;
 }
 
 export interface RunEvent {

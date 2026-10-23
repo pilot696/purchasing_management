@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { getHealth, resumeRun, startRun } from "../lib/api";
 import type { Module } from "../lib/api";
@@ -25,6 +26,7 @@ const MODULES: Array<{ id: Module; name: string; desc: string }> = [
 ];
 
 export default function RunCenter() {
+  const navigate = useNavigate();
   const [runId, setRunId] = useState<string | null>(null);
   const run = useRunStream(runId);
   const health = useQuery({ queryKey: ["health"], queryFn: getHealth, retry: false });
@@ -64,11 +66,11 @@ export default function RunCenter() {
             </div>
             <button
               type="button"
-              disabled={dbDown || busy || start.isPending}
-              onClick={() => start.mutate(module.id)}
+              disabled={module.id === "m3" ? dbDown : dbDown || busy || start.isPending}
+              onClick={() => (module.id === "m3" ? navigate("/matching") : start.mutate(module.id))}
               className="mt-4 rounded-md bg-[var(--brand-primary)] px-3 py-2 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {start.isPending ? "创建中…" : "新建演示运行"}
+              {module.id === "m3" ? "去 M3 页面启动" : start.isPending ? "创建中…" : "新建演示运行"}
             </button>
           </section>
         ))}

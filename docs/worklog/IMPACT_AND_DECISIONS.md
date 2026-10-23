@@ -12,6 +12,18 @@
 
 ## 决策记录（倒序追加，最新在上）
 
+### ADR-019｜PDF 抽屉用「服务端渲染 PNG + bbox 覆盖层」，暂不引入 PDF.js
+- **触发原因**：Spec §9.4 原计划 PDF.js 渲染 + overlay；W1 要在不引入前端 PDF 渲染依赖的前提下把"抽取字段高亮"跑通，
+  并保证 bbox 与底图像素严格对齐。
+- **GitNexus impact**：新增 `GET /documents/{id}/file`、`/page.png` 两个只读端点（不改原契约）；
+  `matching_graph` 报告新增 `documents/po_lines/invoice_lines`，影响 review 载荷与前端 `lib/m3.ts`。
+- **最终方案**：
+  1. 后端 `pypdfium2` 渲染单页 PNG（`scale=2.0`，Cache-Control 1h），前端 `<img>` 铺满容器；
+  2. bbox 用归一化坐标（左上原点）直接换算百分比覆盖层，**天然与图片对齐**，无需处理 PDF.js 的 viewport/scale；
+  3. 打开抽屉时按需触发 `POST /documents/{id}/extract`（幂等）再取 `annotations`，扫描件明确提示"需视觉抽取"；
+  4. 限制：单页、无文本选择/缩放/搜索；W4 视觉阶段若确需多页/选择再评估 PDF.js，后端 PNG 接口保留。
+- **同步更新 Spec**：§8.3 新增两个端点；§9.4 页面 4 增加 W1 实现口径；§13.3 v1.9。
+
 ### ADR-018｜M3 用 LangGraph 图驱动 + finalize 单事务 + audit_log 幂等
 - **触发原因**：W1 要求把 P0 的假节点序列换成真实图；M3 必须严格满足"HITL 前不写会计事实"与"同一 run 重入不重复核销"。
 - **GitNexus impact**：`RunService._execute`（新增 M3 分支）上游是 `/runs` API 与 `main.py` lifespan；

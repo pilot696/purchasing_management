@@ -42,6 +42,7 @@ class MatchingState(TypedDict, total=False):
     po: dict[str, Any]
     invoice: dict[str, Any]
     contract: dict[str, Any] | None
+    documents: dict[str, str | None]
     receipts: list[dict[str, Any]]
     policies: list[dict[str, Any]]
     requires_gr: bool
@@ -112,6 +113,15 @@ async def load_subject(state: MatchingState, deps: MatchingDeps) -> dict[str, An
         ).all()
 
         contract = await session.get(t.Contract, po.contract_id) if po.contract_id else None
+        po_doc = await session.scalar(
+            select(t.Doc).where(t.Doc.linked_kind == "po", t.Doc.linked_id == po.id)
+        )
+        invoice_doc_id = str(invoice.doc_id) if invoice.doc_id else None
+        documents = {
+            "po": str(po_doc.id) if po_doc else None,
+            "invoice": invoice_doc_id,
+            "contract": str(contract.doc_id) if contract is not None and contract.doc_id else None,
+        }
         receipts_rows = (
             await session.scalars(
                 select(t.GoodsReceipt).where(t.GoodsReceipt.po_id == po.id).order_by(t.GoodsReceipt.received_at)
@@ -226,6 +236,7 @@ async def load_subject(state: MatchingState, deps: MatchingDeps) -> dict[str, An
         "po_id": str(po.id),
         "contract_id": str(po.contract_id) if po.contract_id else None,
         "invoice_ids": [str(invoice.id)],
+        "documents": documents,
         "po": po_payload,
         "invoice": invoice_payload,
         "contract": contract_payload,
@@ -382,6 +393,38 @@ def compose_report(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
         "proposed_tail": result["proposed_tail"],
         "tolerance_applied": result["tolerance_applied"],
         "proposed_changes": proposed,
+        # 前端对齐表/PDF 抽屉需要的原始行数据与文档 id（Spec §9.4）
+        "documents": state.get("documents") or {},
+        "po_total": po.get("total_amount_tax_incl"),
+        "invoice_total": invoice.get("amount_tax_incl"),
+        "po_lines": [
+            {
+                "line_no": line["line_no"],
+                "item_desc": line["item_desc"],
+                "spec_bucket": line.get("spec_bucket"),
+                "qty_ordered": line["qty_ordered"],
+                "qty_received": line.get("qty_received"),
+                "qty_invoiced": line.get("qty_invoiced"),
+                "unit_price_tax_excl": line["unit_price_tax_excl"],
+                "tax_rate": line.get("tax_rate"),
+                "amount_tax_incl": line.get("amount_tax_incl"),
+                "promised_date": line.get("promised_date"),
+            }
+            for line in po["lines"]
+        ],
+        "invoice_lines": [
+            {
+                "line_no": line["line_no"],
+                "item_desc": line["item_desc"],
+                "spec_bucket": line.get("spec_bucket"),
+                "qty": line["qty"],
+                "unit_price_tax_excl": line.get("unit_price_tax_excl"),
+                "tax_rate": line.get("tax_rate"),
+                "amount_tax_excl": line.get("amount_tax_excl"),
+                "amount_tax_incl": line.get("amount_tax_incl"),
+            }
+            for line in invoice["lines"]
+        ],
         "diff_count": len(result["diffs"]),
         "multi_invoice": False,  # W1 限制：单张发票；W2 扩展多张（Spec §7.4）
         "summary": (

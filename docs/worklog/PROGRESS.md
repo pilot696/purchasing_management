@@ -16,6 +16,23 @@
 
 ## 留痕记录（倒序追加，最新在上）
 
+### [2026-10-23 17:15] W1-M3 第 6 步 + 前端：M3 工作台（对齐表 + 差异清单 + PDF 抽屉 + HITL）
+- **变更文件**：
+  - 前端：新增 `frontend/src/components/PdfDrawer.tsx`、`frontend/src/lib/m3.ts`(+`m3.test.ts`)，重写 `pages/Matching.tsx`，修改 `lib/api.ts`（文档/快照接口）、`lib/events.ts`（ReviewTask 载荷）、`pages/RunCenter.tsx`（M3 卡片跳转）
+  - 后端：`api/v1/documents.py`（`/file`、`/page.png`）、`agents/matching.py`（报告补 `documents/po_lines/invoice_lines/po_total/invoice_total`、state 增加 `documents`）、`services/runs.py`（review 载荷附完整 report）
+  - 新增 `scripts/smoke_m3.py`
+- **GitNexus 影响面**：`GET /documents/{id}/annotations` 上游新增两个只读端点；`matching_graph` 的 state/report 字段变更影响 RunService review 载荷与前端渲染；`detect_changes` 见提交记录。
+- **核心设计执行**：
+  - 页面：PO/发票号输入 → `POST /runs(m3)` → SSE 节点时间线 → 对齐表（PO 行/发票行/方法/拟核销/剩余/状态）→ 差异卡片（severity 色 + 规则 + 建议）→ `放行核销/挂起`（角色不足时提示切 finance）；
+  - PDF 抽屉：服务端渲染单页 PNG（`page.png`）+ 归一化 bbox 百分比覆盖层；打开时先 `POST /documents/{id}/extract` 再取 `annotations`，扫描件无注解时给出提示；
+  - 报告补齐渲染所需原始行与文档 id（此前 review 载荷只有 diff/数量，前端无法画对齐表）。
+- **本轮踩坑（GOTCHAS G-027/G-028）**：LangGraph `TypedDict` 未声明的 state key 被静默丢弃（`documents` 变 `{}`）；bbox 百分比浮点误差（`0.1*100=10.000000000000002%`）导致覆盖层偏移。
+- **验证结果**：
+  - 前端：`vitest` **26 passed**（新增 m3 8 条）；`tsc` 0 错；`vite build` 成功（98 modules，332.9KB / gzip 104.8KB）
+  - 后端：unit **66 passed / 12 skipped**；integration **11 passed / 1 skipped**
+  - **`scripts/smoke_m3.py` 真实 HTTP 全链路 OK**：m3 run → 节点事件（load/normalize/align/reconcile/compose）→ interrupt（overall=hold，3 项差异）→ `page.png` 111KB → 抽取后 annotations=3 → buyer 403 / finance 200 → finalize → run.end=succeeded → artifact.decision=accept
+- **下一步 (Next)**：W1 完成，进入 W2-M1（规则 DSL + 混合检索 + 预检图 + HITL 补字段）
+
 ### [2026-10-23 16:00] W1 回归：e2e 冒烟发现并修复 SSE 终端竞态（GOTCHAS G-026）
 - **变更文件**：`backend/app/api/v1/runs.py`（SSE 终端宽限 2×50ms，避免状态落库与尾部事件写入之间的窗口丢 `run.end`）
 - **触发原因**：GitNexus `detect-changes` 对第 5 步给出 **risk=high / 6 条执行流**（`lifespan`、`RunService._execute/_set_status` 等共享生命周期符号），

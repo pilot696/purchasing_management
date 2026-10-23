@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import io
 import time
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 
 from app.api.deps import SessionDep
@@ -53,6 +55,35 @@ async def get_document(doc_id: UUID, session: SessionDep) -> dict[str, Any]:
         "template_hit": doc.template_hit,
         "extractor_used": doc.extractor_used,
     }
+
+
+@router.get("/documents/{doc_id}/file")
+async def get_file(doc_id: UUID, session: SessionDep) -> FileResponse:
+    """原始 PDF（浏览器 PDF 阅读器/下载用）。"""
+    doc = await _get_doc(session, doc_id)
+    path = _resolve_file(doc)
+    return FileResponse(path, media_type="application/pdf", filename=path.name)
+
+
+@router.get("/documents/{doc_id}/page.png")
+async def get_page_png(doc_id: UUID, session: SessionDep, page: int = 1) -> Response:
+    """单页 PNG（PDF 抽屉用：前端用 <img> 铺满 + 归一化 bbox 覆盖层，天然对齐）。"""
+    doc = await _get_doc(session, doc_id)
+    path = _resolve_file(doc)
+
+    import pypdfium2 as pdfium
+
+    document = pdfium.PdfDocument(path.read_bytes())
+    if page < 1 or page > len(document):
+        raise AppError("页码超出范围", details={"page": page, "page_count": len(document)})
+    bitmap = document[page - 1].render(scale=2.0)
+    buffer = io.BytesIO()
+    bitmap.to_pil().convert("RGB").save(buffer, format="PNG")
+    return Response(
+        content=buffer.getvalue(),
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @router.get("/documents/{doc_id}/annotations")

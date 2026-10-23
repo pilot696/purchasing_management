@@ -1874,6 +1874,8 @@ queued ──► running ──► awaiting_review ──► running ──► s
 | GET | `/documents/{id}/file` | 原件流（`Content-Disposition: inline`，供 PDF.js） |
 | GET | `/documents/{id}/page/{page}.png?dpi=140` | 页面渲染（PDF.js 不可用时的降级） |
 | GET | `/documents/{id}/annotations?line_ref=` | bbox 注解（抽屉高亮用） |
+| GET | `/documents/{id}/file` | 原始 PDF（下载/浏览器阅读器） |
+| GET | `/documents/{id}/page.png?page=1` | 单页 PNG（PDF 抽屉高亮底图，v1.9） |
 | POST | `/documents/{id}/extract` | 同步抽取并落库（W1 已实现，返回 `{doc_id, record_id, summary, result}`）；W4 可升级为 202 + run |
 
 **Master Data**
@@ -2046,6 +2048,11 @@ make gen-api        # 起服务 → openapi-typescript http://localhost:8000/ope
 - **状态枚举**：`running | awaiting_review | succeeded`；`overall ∈ pass | release_with_note | hold`。
 - **交互（双向高亮）**：点表格行 → `GET /documents/{id}/annotations?line_ref=po_line:2` → 抽屉滚到 page、绘制 bbox；点抽屉内 bbox → 反向选中表格行（前端维护 `selectedLine` 单一状态源）。
 - **数据**：`GET /runs/{id}`、`GET /documents/{id}/file`、`annotations`。
+
+> **W1 实现口径（v1.9）**：路由暂为 `/matching`（页面内输入 PO/发票号启动，等价于 `:poId` 的极简版）；对齐表为
+> PO 行 | 发票行 | 方法 | 拟核销 | 剩余 | 状态 6 列；PDF 抽屉当前用**服务端渲染单页 PNG**（`GET /documents/{id}/page.png`）
+> + 归一化 bbox 覆盖层，而非 PDF.js——bbox 与图片天然对齐、零前端 PDF 依赖；多页/文本选择/缩放留到 W4 视觉阶段再评估。
+> 差异 chips 已实现（右侧差异清单卡片，含 severity 色与建议）；合同列为空（W1 仅单合同场景，PO/发票两列足够验证）。
 
 #### 页面 5｜规则库（`/rules`）
 
@@ -2477,6 +2484,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-23 | v1.5 | M3 抽取管线落地：`DocumentRouter` + `pdf_native`（**表格结构优先、正则兜底**）+ 校验器 + bbox 注解；`doc_annotation` 坐标明确为**左上原点归一化**；扫描件显式返回 `VLM_REQUIRED` 接缝 | W1-M3 第 2 步实现 |
 | 2026-10-23 | v1.7 | M3 匹配层落地：`normalizer`（别名词典 + 规格抽取 → `spec_bucket`）、`align`（L1/L2/L3 + 匈牙利 + 贪心消融）、`tolerances`（`min(ordered, received)` 上限 + 尾差基准 + 金额去重）；扫描件改为**精确配额**分配；M3 基线：overall 100%、6 类 diff F1 100%、行对齐 F1 100% | W1-M3 第 4 步实现 |
 | 2026-10-23 | v1.8 | M3 `matching_graph`（LangGraph：load→normalize→align→reconcile→compose→interrupt→finalize）+ HITL + finalize 单事务/幂等；`invoice.remark` 列（alembic 0002，terms_conflict 判定输入）；RunService 按 module 分派图；图级集成测试 3 条（放行/挂起/RunService 全流程） | W1-M3 第 5 步实现 |
+| 2026-10-23 | v1.9 | M3 前端落地（对齐表 + 差异清单 + HITL 放行/挂起 + 服务端 PNG PDF 抽屉 + bbox 覆盖层）；M3 报告补齐 `documents/po_lines/invoice_lines` 字段；新增 `GET /documents/{id}/file`、`/page.png`；`scripts/smoke_m3.py` 端到端冒烟 | W1-M3 第 6 步 + 前端 |
 
 ---
 

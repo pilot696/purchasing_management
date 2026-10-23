@@ -246,4 +246,18 @@
 - **防回归**：`scripts/smoke_e2e.py`（断言 finalize + run.end + snapshot artifact）；修复后
   `events_after_resume=3`、`SMOKE_E2E=OK`。
 
+## G-027｜LangGraph `TypedDict` 未声明的 state key 会被静默丢弃
+- **问题现象**：M3 报告里 `documents` 在前端一直是空对象 `{}`，PDF 抽屉拿不到发票 doc_id；但后端 `load_subject` 明明查到了 doc 并 return 了 `"documents"`。
+- **根因定位**：`StateGraph(MatchingState)` 只保留 TypedDict 声明的通道；`load_subject` 返回值里多了一个未声明的 `documents` 字段，
+  节点更新被**静默忽略**——不报错、不告警，最难查的一类（还是靠端到端冒烟发现）。
+- **修复手段**：在 `MatchingState` 显式声明 `documents: dict[str, str | None]`；并把"报告必须含 documents/po_lines/invoice_lines"
+  写成端到端冒烟断言，任何字段再次被吞都会在提交前暴露。
+- **防回归**：`scripts/smoke_m3.py` 的 `[3/6]`（report.documents.invoice）与 `[4/6]`（page.png + annotations）断言。
+
+## G-028｜bbox 百分比出现浮点尾巴：`0.1 * 100 = 10.000000000000002%`
+- **问题现象**：前端 PDF 抽屉的 bbox 覆盖层单测失败，style 左侧变成 `10.000000000000002%`；真实浏览器里表现为轻微错位/难以断言。
+- **根因定位**：归一化坐标转百分比直接 `value * 100`，JS 二进制浮点误差进入 CSS 字符串；这类误差在断言与视觉对齐里都不可接受。
+- **修复手段**：`annotationBoxStyle` 统一 `parseFloat((v*100).toFixed(4))`，既消掉尾巴又保留 0.01% 精度；单测改为断言精确字符串。
+- **防回归**：`frontend/src/lib/m3.test.ts::annotationBoxStyle`（含负值/越界钳制用例）。
+
 <!-- 追加位置：新踩坑写在本行上方 -->

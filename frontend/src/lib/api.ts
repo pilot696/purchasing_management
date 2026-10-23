@@ -106,3 +106,60 @@ export const EVENT_TYPES: EventType[] = [
   "error",
   "heartbeat",
 ];
+
+// --------------------------------------------------------------------------- 文档（M3 PDF 抽屉）
+
+export interface DocumentAnnotation {
+  field_name: string;
+  line_ref: string | null;
+  page_no: number;
+  x0: number | null;
+  y0: number | null;
+  x1: number | null;
+  y1: number | null;
+  text_raw: string | null;
+}
+
+export async function getDocumentAnnotations(
+  docId: string,
+): Promise<{ items: DocumentAnnotation[]; total: number }> {
+  const response = await fetch(`/api/v1/documents/${docId}/annotations`, { headers: headers() });
+  if (!response.ok) throw await asError(response);
+  return (await response.json()) as { items: DocumentAnnotation[]; total: number };
+}
+
+export interface ExtractionSummary {
+  status: "ok" | "needs_review" | "failed" | string;
+  extractor: string;
+  annotations: number;
+  issues: Array<{ code: string; message: string; severity: string }>;
+}
+
+export async function extractDocument(
+  docId: string,
+): Promise<{ doc_id: string; record_id: number; summary: ExtractionSummary }> {
+  const response = await fetch(`/api/v1/documents/${docId}/extract`, { method: "POST", headers: headers() });
+  if (!response.ok) throw await asError(response);
+  return (await response.json()) as { doc_id: string; record_id: number; summary: ExtractionSummary };
+}
+
+export function documentPageUrl(docId: string, page = 1): string {
+  return `/api/v1/documents/${docId}/page.png?page=${page}`;
+}
+
+export interface RunSnapshot {
+  run: {
+    run_id?: string;
+    module?: string;
+    status?: string;
+    last_seq?: number;
+  };
+  review: Record<string, unknown> | null;
+  artifact: Record<string, unknown> | null;
+}
+
+export async function getRunSnapshot(runId: string): Promise<RunSnapshot> {
+  const response = await fetch(`/api/v1/runs/${runId}`, { headers: headers() });
+  if (!response.ok) throw await asError(response);
+  return (await response.json()) as RunSnapshot;
+}

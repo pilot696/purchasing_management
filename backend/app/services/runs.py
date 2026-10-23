@@ -183,6 +183,7 @@ class RunService:
                 "diffs": report.get("diffs", []),
                 "line_matches": report.get("line_matches", []),
                 "proposed_changes": report.get("proposed_changes", []),
+                "report": report,
                 "editable": False,
                 "subject": subject,
             }
