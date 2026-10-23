@@ -42,11 +42,16 @@ def _sha256(data: bytes) -> str:
 
 
 def _text_stats(pdf_bytes: bytes) -> tuple[bool, float]:
-    """估算文本层占比：数字原生 ≈ 0.4~0.8，扫描件 = 0。"""
+    """文本层占比，与 Spec §7.2 `DocumentRouter` 同量纲：每 1e3 pt² 面积的有效字符数。
+
+    数字原生 PO ≈ 0.5、发票 ≈ 0.8~1.4、合同 ≈ 1.2（≥0.15 判 native），扫描件 = 0。
+    """
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        text = pdf.pages[0].extract_text() or ""
-    ratio = min(1.0, len(text.strip()) / 900)
-    return len(text.strip()) >= 40, round(ratio, 4)
+        page = pdf.pages[0]
+        text = (page.extract_text() or "").strip()
+        area = max(1.0, float(page.width) * float(page.height))
+    ratio = min(9.99, len(text) / area * 1000)
+    return len(text) >= 40, round(ratio, 4)
 
 
 async def _insert(session: AsyncSession, model: Any, rows: list[dict[str, Any]]) -> None:
@@ -502,6 +507,16 @@ async def persist_dataset(dataset: dict[str, Any], cfg: SeedConfig) -> dict[str,
                             "amount_tax_incl": line["amount_tax_incl"],
                         }
                     )
+
+        # po_line.qty_received 必须与收货行一致（M3 可开票上限 = min(ordered, received)，Spec §7.5）
+        received_by_line: dict[uuid.UUID, float] = {}
+        for line in receipt_line_rows:
+            received_by_line[line["po_line_id"]] = received_by_line.get(line["po_line_id"], 0.0) + float(
+                line["qty"]
+            )
+        for row in po_line_rows:
+            row["qty_received"] = received_by_line.get(row["id"], 0.0)
+            row["qty_invoiced"] = 0.0
 
         # doc 先插（供 FK），业务行随后
         await _insert(session, t.Doc, doc_rows)

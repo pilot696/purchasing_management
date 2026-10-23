@@ -16,6 +16,17 @@
 
 ## 留痕记录（倒序追加，最新在上）
 
+### [2026-10-23 14:35] W1-M3 自查：修复 5 个数据/配置缺陷（其中 3 个会影响评测可信度）
+- **变更文件**：`backend/app/seed/{dataset,persist}.py`、`backend/tests/{test_seed,test_seed_integrity}.py`、`docker-compose.yml`、`docs/PROJECT_SPEC.md`（§3.5/§7.2 阈值标定 + v1.4）
+- **缺陷与修复**：
+  1. **`po_line.qty_received` 未落库**（收货行只写 `receipt_line`）→ M3 的 `min(ordered, received)` 会把全部发票判超发。修复：落库前按收货行汇总回填 `qty_received`（`qty_invoiced` 保持 0，待匹配后提交）；
+  2. **`text_ratio` 口径与 Spec 路由阈值不符**（种子用 `len/900`，Spec 用"每 1e3 pt² 字符数"且阈值 0.6）→ 实测原生 PO 仅 0.49，会被误判 scanned。修复：种子改用面积口径；并**把 Spec 阈值从 0.6 标定为 0.15**（原生 PO 0.435~0.509 / 发票 0.698~0.788 / 合同 0.76~0.81 / 扫描件 0）；
+  3. **PR gold 与真实预算不一致**：`over_budget` 原先只在 anomaly 分支强制为真，clean 样本可能实际已超预算但 gold 写 pass → M1 评测失真。修复：`over_budget` 一律由 `estimated > available` 推导；新增 6 条 `policy_block` 样本（verdict=block），三类 verdict 均有样本；
+  4. **PR owner/cost_center 丢失**：`pr_item` 无该列且种子写在 item 顶层 → 持久化时被丢弃。修复：统一写入 `spec["owner"]` / `spec["cost_center"]`，gold 路径同步为 `items[0].spec.owner`；
+  5. **`docker compose` 强依赖 `backend/.env`**：新克隆仓库缺该文件时 `env_file` 直接报错。修复：`env_file` 改为 `{path, required: false}`，默认值走 `environment`。
+- **验证结果**：`pytest tests/test_seed.py` → **12 passed**；`-m integration` → **6 passed**（新增 seed 完整性 4 条：收货一致性、doc 文本层口径、规模、种子存在性）；重新 seed：234 份 PDF / 11.12MB；DB ratio 分布已对齐（native ≥0.435）；`po_line` 示例 `ordered=15, received=8, invoiced=0`
+- **下一步 (Next)**：M3 抽取管线（DocumentRouter → pdf_native → validators → extraction_record）
+
 ### [2026-10-23 14:15] W1-M3 第 1 步：数据工厂完成（master + 230 份 PDF + 自动 gold）
 - **变更文件**：
   - 新增 `backend/app/seed/{__init__,config,dataset,render,degrade,persist,runner}.py`、`scripts/seed.py`

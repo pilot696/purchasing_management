@@ -21,7 +21,9 @@ services:
     build:
       context: ./backend
     env_file:
-      - ./backend/.env
+      # 可选：本地开发把 backend/.env.example 复制成 backend/.env；缺失时用下面的 environment 默认值
+      - path: ./backend/.env
+        required: false
     environment:
       DATABASE_URL: postgresql+psycopg://app:app@db:5432/procurement
       FORCE_FAKE_LLM: "1"

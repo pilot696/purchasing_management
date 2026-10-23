@@ -530,7 +530,6 @@ def _build_prs(rng, cfg: SeedConfig, master: dict[str, Any]) -> tuple[list[dict[
     for sku in master["skus"]:
         skus_by_cat[sku["category_code"]].append(sku)
     budget_by_key = {(b["department_cost_center"], b["category_code"]): b for b in master["budgets"]}
-    dept_by_cc = {d["cost_center"]: d for d in master["departments"]}
 
     prs: list[dict[str, Any]] = []
     gold: list[dict[str, Any]] = []
@@ -539,15 +538,17 @@ def _build_prs(rng, cfg: SeedConfig, master: dict[str, Any]) -> tuple[list[dict[
         category = CATEGORIES[i % len(CATEGORIES)][0]
         sku = skus_by_cat[category][i % len(skus_by_cat[category])]
         dept = master["departments"][i % len(master["departments"])]
-        anomaly = anomaly_cycle[i % len(anomaly_cycle)]
-        qty = rng.choice((1, 2, 3, 5, 10, 15))
-        spec = dict(sku["spec"])
+        # 每 20 条插入 1 条"硬政策违规"（block），保证评测集有 block 样本
+        anomaly = "policy_block" if i % 20 == 10 else anomaly_cycle[i % len(anomaly_cycle)]
+        qty = rng.choice((1, 2)) if anomaly == "clean" else rng.choice((1, 2, 3, 5, 10, 15))
+        spec: dict[str, Any] = dict(sku["spec"])
         owner: str | None = f"user{i % 6 + 1}"
         cost_center: str | None = dept["cost_center"]
         item_name = sku["name"]
         title = f"采购{sku['name']} {qty} {sku['unit']}"
         missing: list[str] = []
         ambiguity = False
+        policy_block = anomaly == "policy_block"
         if anomaly == "missing_field":
             if category == "IT_HW":
                 spec.pop("memory_gb", None)
@@ -557,17 +558,28 @@ def _build_prs(rng, cfg: SeedConfig, master: dict[str, Any]) -> tuple[list[dict[
                 missing.append("items.0.spec.period_months")
             else:
                 owner = None
-                missing.append("items.0.owner")
+                missing.append("items.0.spec.owner")
         if anomaly == "ambiguity":
             item_name = "办公电脑" if category == "IT_HW" else "会议服务"
             spec = {}
             ambiguity = True
         if anomaly == "qty_outlier":
             qty = rng.choice((60, 80))
+        if policy_block:
+            if category == "MKT_OUTSOURCE":
+                spec["related_party"] = True
+            else:
+                spec["data_scope"] = "客户数据"
+        # pr_item 没有 owner/cost_center 独立列（Spec §3.4），统一放进 spec 槽位，规则路径同步为 items[*].spec.owner
+        if owner is not None:
+            spec["owner"] = owner
+        if cost_center is not None:
+            spec["cost_center"] = cost_center
         unit_price = money(sku["ref_price_p50"] * rng.uniform(0.95, 1.08))
         estimated = money(qty * unit_price)
         budget = budget_by_key[(dept["cost_center"], category)]
         available = budget["amount_total"] - budget["amount_used"] - budget["amount_committed"]
+        # 超预算必须由"实际可用额"推导，否则 clean 样本会被真实引擎判成 needs_info，gold 失真
         over_budget = estimated > available
         if anomaly == "over_budget":
             over_budget = True
@@ -598,8 +610,6 @@ def _build_prs(rng, cfg: SeedConfig, master: dict[str, Any]) -> tuple[list[dict[
                         "amount_est": estimated,
                         "sku_code": sku["sku_code"],
                         "spec_bucket": sku["spec_bucket"],
-                        "owner": owner,
-                        "cost_center": cost_center,
                     }
                 ],
             }
@@ -613,7 +623,15 @@ def _build_prs(rng, cfg: SeedConfig, master: dict[str, Any]) -> tuple[list[dict[
             findings.append({"type": "cross_field", "field": "/estimated_amount", "severity": "medium"})
         if anomaly == "qty_outlier":
             findings.append({"type": "stat_outlier", "field": "/items/0/qty", "severity": "medium"})
-        verdict = "needs_info" if findings else "pass"
+        if policy_block:
+            findings.append(
+                {
+                    "type": "policy_ref",
+                    "field": "/items/0/spec/related_party" if category == "MKT_OUTSOURCE" else "/items/0/spec/data_scope",
+                    "severity": "high",
+                }
+            )
+        verdict = "block" if policy_block else ("needs_info" if findings else "pass")
         gold.append(
             {
                 "case_id": f"m1-{i + 1:04d}",
@@ -622,8 +640,10 @@ def _build_prs(rng, cfg: SeedConfig, master: dict[str, Any]) -> tuple[list[dict[
                 "anomaly": anomaly,
                 "expected_verdict": verdict,
                 "expected_findings": findings,
+                "expected_missing_fields": [f"/{p.replace('.', '/')}" for p in missing],
                 "expected_ambiguity_fields": ["/items/0/item_name"] if ambiguity else [],
                 "expected_over_budget": over_budget,
+                "expected_policy_block": policy_block,
             }
         )
     return prs, gold

@@ -12,6 +12,19 @@
 
 ## 决策记录（倒序追加，最新在上）
 
+### ADR-014｜用数据工厂标定路由阈值，并修复种子数据 4 处一致性缺陷
+- **触发原因**：W1-M3 开工前自查发现：`po_line.qty_received` 未落库、`text_ratio` 口径与 Spec 阈值不符、PR gold 的
+  `over_budget` 与真实预算不一致、`pr_item` 的 owner/cost_center 在持久化时丢失（GOTCHAS G-014/G-015）。
+- **GitNexus impact**：`impact "build_dataset" / "persist_dataset"` 无上游既有调用（新增模块）；改动集中在 `app/seed/*`，
+  影响面为数据工厂自身与测试；`detect_changes` 结果见提交前记录。
+- **最终方案**：
+  1. `persist` 落库前汇总 `receipt_line.qty` 回填 `po_line.qty_received`（`qty_invoiced=0`），保证 §7.5 上限口径可用；
+  2. `text_ratio` 改为与 Spec 同量纲（每 1e3 pt² 字符数），**阈值由 0.6 标定为 0.15**（原生 PO 0.435~0.509，扫描件 0）；
+  3. PR 的 `over_budget` 由 `estimated > available` 推导，verdict 由 findings 推导，新增 `policy_block` 样本；
+  4. owner/cost_center 移入 `spec` 槽位（与 §3.4 表结构兼容），gold 路径同步；
+  5. compose `env_file` 改为 optional（G-016）。
+- **同步更新 Spec**：§3.5 `text_ratio numeric(6,4)`、§7.2 路由阈值 0.15（v1.4 变更记录）。
+
 ### ADR-013｜数据工厂拆分为「纯构建」与「副作用落库」，异常槽位精确分配
 - **触发原因**：Spec §10 要求"生成即金标、固定 seed 可复现"。若构建函数直接写 DB/文件，单测必须连库，且难以验证确定性；
   §10.3 又要求每个差异类型 ≥10 正样本，随机分配会缺样本（首版 `price` 只有 11 条）。

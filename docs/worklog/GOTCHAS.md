@@ -132,4 +132,30 @@
   ② 版本检查只 import 不取 `__version__`。
 - **防回归**：`test_seed.py::test_pdf_has_text_layer` 断言抽取文本包含"增值税"与发票号；`test_contract_contains_payment_terms` 断言"付款条款"。
 
+## G-014｜Spec 里的路由阈值（text_ratio > 0.6）与真实文档不符
+- **问题现象**：按 Spec §7.2 的判据，种子生成的原生 PO 的 `text_ratio` 只有 0.49，会被 `DocumentRouter` 判成 scanned/hybrid，
+  把 80 份数字 PO 全部推去走 VLM（成本与错误率都会爆炸）。
+- **根因定位**：阈值 0.6 是拍脑袋写的，未用真实文档标定；`text_ratio = 字符数 / 页面积(pt²) × 1e3` 的量纲下，
+  A4 一页正文约 0.4~1.5，0.6 处于"表格类文档"的灰区。
+- **修复手段**：用数据工厂的 234 份文档实测标定——原生 PO 0.435~0.509、发票 0.698~0.788、合同 0.760~0.812、扫描件 0；
+  阈值改为 **≥0.15 判 native**、`<0.05` 判 scanned、其间为 hybrid；Spec §7.2 同步更新（v1.4）。
+- **防回归**：`test_seed.py::test_scan_degrade_removes_text_layer`（原生 ratio ≥0.15、扫描件 ratio=0）；
+  `test_seed_integrity.py::test_doc_text_ratio_consistent_with_text_layer`（DB 层同口径）。
+
+## G-015｜gold 与真实业务计算不一致（PR 超预算标记）
+- **问题现象**：M1 gold 里部分"clean"样本实际 `estimated > budget.available`，但 gold 记为 `verdict=pass`。
+  一旦 W2 的规则引擎接上真实预算，eval 会稳定出现假阴性，且无法判断是模型错还是数据错。
+- **根因定位**：生成时只在 `anomaly == "over_budget"` 分支强制该标记，未把"自然超预算"统一纳入判定；
+  同时紧预算部门（可用额约为总额 1.9%）让绝大多数采购天然超预算。
+- **修复手段**：`over_budget` 一律由 `estimated > available` 推导（anomaly 只是放大金额）；verdict 由 findings 统一推导；
+  新增 6 条 `policy_block` 样本覆盖 block 类。并加不变量测试：gold 标记 == 实际可用额推导结果。
+- **防回归**：`test_seed.py::test_pr_gold_matches_budget_and_verdict`、`test_m1_verdict_distribution_has_all_classes`。
+
+## G-016｜`docker compose` 在缺少 `backend/.env` 时直接失败（新克隆不可用）
+- **问题现象**：`docker compose config` 报 `env file ... not found`，导致即使只想 `up db` 也起不来；
+  而 `.env` 被 gitignore，新克隆仓库必然缺失。
+- **根因定位**：compose 文件用短语法 `env_file: [./backend/.env]`，默认 required。
+- **修复手段**：改为长语法 `{path: ./backend/.env, required: false}`，缺省值由 `environment` 提供（DB URL / FakeLLM）。
+- **防回归**：`scripts/dev.ps1 up` 前已有 `.env` 检查；README 快速开始第 1.5 步给复制命令。
+
 <!-- 追加位置：新踩坑写在本行上方 -->

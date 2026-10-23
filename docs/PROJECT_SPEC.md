@@ -425,7 +425,7 @@ CREATE TABLE doc (
   mime            text NOT NULL,
   page_count      int,
   has_text_layer  boolean,                -- DocumentRouter 的第一判据
-  text_ratio      numeric(4,3),           -- 有效文本字符/页面积 估计值
+  text_ratio      numeric(6,4),           -- 每 1e3 pt² 面积的有效字符数（数字原生≈0.3~2.0，扫描件=0）
   template_hit    text,                   -- 命中的版式模板（如 cn_vat_invoice_v1）
   extractor_used  text,                   -- pdf_native|vlm|hybrid|rule
   linked_kind     text,                   -- invoice|contract|po...
@@ -1421,7 +1421,7 @@ class SupplierEvalResult(BaseModel):
 flowchart LR
   IN["上传 / 关联文件"] --> H["sha256 去重<br/>写 doc"]
   H --> RT{"DocumentRouter"}
-  RT -->|"text_ratio > 0.6 且模板命中"| PN["pdf_native<br/>pdfplumber 文本+表格<br/>正则抽字段<br/>chars 坐标取 bbox"]
+  RT -->|"text_ratio ≥ 0.15 且模板命中"| PN["pdf_native<br/>pdfplumber 文本+表格<br/>正则抽字段<br/>chars 坐标取 bbox"]
   RT -->|"text_ratio < 0.05"| VS["scanned<br/>pypdfium2 渲染 200dpi<br/>VLM vision_extract + JSON Schema"]
   RT -->|"0.05 ~ 0.6（混合）"| HY["hybrid<br/>文本层先抽，缺失字段回退 VLM"]
   PN --> VA["validators<br/>算术/枚举/日期/重复票校验"]
@@ -1440,8 +1440,9 @@ def route(doc_path) -> DocRoute:
     pages = load_pages(doc_path)
     text_ratio = mean(len(p.get_text().strip()) / (p.rect.width * p.rect.height) for p in pages) * 1e3
     template = match_template(pages[0].get_text())      # 关键词锚点：发票代码/购买方/价税合计
-    if text_ratio > 0.6 and template: return DocRoute("pdf_native", template, 0.95)
-    if text_ratio < 0.05:             return DocRoute("scanned", None, 0.9)
+    # 阈值来自合成数据实测标定（W1 数据工厂）：PO≈0.49、发票≈0.8~1.4、合同≈1.2、扫描件=0
+    if text_ratio >= 0.15 and template: return DocRoute("pdf_native", template, 0.95)
+    if text_ratio < 0.05:               return DocRoute("scanned", None, 0.9)
     return DocRoute("hybrid", template, 0.6)
 ```
 
@@ -2459,6 +2460,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-23 | — | 审定未采纳两项：`deepseek-v4-flash` 经官方页核实为**遗留别名**，当前模型名是 `deepseek-flash`（脚注原文见 §2.5），故不改名；"第 840 行后残留提示词"核实不存在（该行为 Mermaid 节点，全文关键词 grep 0 命中） | 审阅意见复核 |
 | 2026-10-23 | v1.2 | 运行时入口补充：新增 `backend/run.py` 与 `app/core/loop.py`，修正 Windows 下 uvicorn 单进程硬编码 `ProactorEventLoop` 导致 psycopg 异步连接全不可用的问题（§2.3、附录 A.3；排障见 worklog GOTCHAS G-009） | W0 端到端联调实测 |
 | 2026-10-23 | v1.3 | 数据工厂落地（§10）：`build_dataset` 纯函数 + `persist_dataset` 落库；230 份 PDF（含 23 份扫描件）、120 份 M1 gold、80 组 M3 gold；异常槽位精确覆盖 §10.3 每类数量；`requires_gr` 驱动收货单生成 | W1-M3 第 1 步实现 |
+| 2026-10-23 | v1.4 | 数据口径修复（自查发现）：`text_ratio` 改为"每 1e3 pt² 字符数"并**将路由阈值从 0.6 标定为 0.15**（原生 PO 实测 0.435~0.509、发票 0.698~0.788、扫描件 0）；`doc.text_ratio` 列类型 numeric(6,4)；`po_line.qty_received` 由收货行汇总回填；PR gold 的 `over_budget` 与 verdict 统一由真实预算/规则推导，新增 block 样本 | W1-M3 开工前自查 |
 
 ---
 
