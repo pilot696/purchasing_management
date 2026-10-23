@@ -1,4 +1,4 @@
-.git
+﻿.git
 .venv
 __pycache__
 *.py[cod]
@@ -13,9 +13,9 @@ frontend/tsconfig.tsbuildinfo
 data/files
 data/seed
 data/gold
-evals
 docs
 design
 .claude
 .gitnexus
 *.log
+
