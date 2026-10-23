@@ -1,44 +1,95 @@
+# 一键部署（Linux VM / 任意有 Docker 的机器）：
+#
+#   docker compose up -d
+#
+# 首次启动会自动：build 前端+后端镜像 → alembic 迁移 → 数据库为空时自动 seed（约 1 分钟）
+# → 在 http://<本机IP>:8000 提供完整工作台（API + 前端同端口）。
+#
+# 可选：
+#   cp deploy.env.example .env    # 改端口/数据库密码/真实模型 key（不建也能直接跑，默认离线 FakeLLM）
+#   POSTGRES_PASSWORD 强烈建议修改（默认 app 仅用于演示）
+#   重置演示数据：docker compose down -v
+#   接真实模型：.env 里 FORCE_FAKE_LLM=0 + DEEPSEEK_API_KEY=...
+#
+# 说明：
+# - 只需要仓库代码 + 这个文件（镜像在 VM 上构建，首次需要访问 Docker Hub / PyPI / npm）
+# - db 不映射宿主机端口，仅 compose 内网访问
+# - 演示 RBAC 是 X-Demo-Role 模拟，公网部署请加 HTTPS/SSO 或放内网
+
 name: procurement-workbench
 
 services:
   db:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: app
-      POSTGRES_DB: procurement
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-procurement}
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app -d procurement"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
-      retries: 12
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   api:
     build:
       context: .
       dockerfile: Dockerfile
-    env_file:
-      # 可选：本地开发把 backend/.env.example 复制成 backend/.env；缺失时用下面的 environment 默认值
-      - path: ./backend/.env
-        required: false
+    image: procurement-workbench:local
+    restart: unless-stopped
+    init: true
     environment:
-      DATABASE_URL: postgresql+psycopg://app:app@db:5432/procurement
-      FORCE_FAKE_LLM: "1"
+      APP_ENV: ${APP_ENV:-prod}
+      # 密码含 @ : / 等字符时请先 URL-encode，或改用简单密码
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-procurement}"
+      DB_CONNECT_TIMEOUT_S: "1.5"
+      FORCE_FAKE_LLM: ${FORCE_FAKE_LLM:-1}
+      # OpenCode Go（OpenAI 兼容）；默认离线，填 key 并置 FORCE_FAKE_LLM=0 后生效
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://opencode.ai/inference/go/openai/v1}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      REASON_MODEL: ${REASON_MODEL:-deepseek-v4.1-flash}
+      ZHIPU_BASE_URL: ${ZHIPU_BASE_URL:-https://opencode.ai/inference/go/openai/v1}
+      ZHIPU_API_KEY: ${ZHIPU_API_KEY:-}
+      REASON_SMALL_MODEL: ${REASON_SMALL_MODEL:-glm-5.3-flash}
+      DEMO_STEP_DELAY_MS: ${DEMO_STEP_DELAY_MS:-350}
+      SEED_ON_START: ${SEED_ON_START:-1}
+      TZ: ${TZ:-Asia/Shanghai}
     ports:
-      - "8000:8000"
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      # seed 生成的 PDF：容器重建后 PDF 抽屉仍可用
+      - datafiles:/workspace/data/files
+      # prompt 缓存（可选）
+      - promptcache:/workspace/backend/.cache/prompts
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz').status==200 else 1)"]
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz').status==200 else 1)"
       interval: 10s
       timeout: 5s
-      retries: 12
-      start_period: 40s
+      retries: 18
+      start_period: 180s  # 首次启动包含 npm build / pip install / seed，给足时间
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
 volumes:
   pgdata:
+  datafiles:
+  promptcache:

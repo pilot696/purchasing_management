@@ -183,3 +183,4 @@ Makefile            CI/Linux 入口（up-app / seed-docker / eval / design 等�
 4. **可观测**：每次 LLM 调用写 `llm_call`，每个节点写 `run_event`，UI 可回放。
 
 
+

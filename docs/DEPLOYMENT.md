@@ -1,4 +1,4 @@
-# 部署说明（Docker Compose 一键起）
+﻿# 部署说明（Docker Compose 一键起）
 
 > 目标：新机器 `git clone → docker compose up -d --build → seed → 打开 http://localhost:8000`。
 > 本地非 Docker 的生产形态（uvicorn 直接托管前端 dist）见 §4。
@@ -69,3 +69,4 @@ DATABASE_URL=postgresql+psycopg://app:app@localhost:5432/procurement \
 4. **数据卷**：`pgdata` volume 持久化；`data/files` 为 seed 生成的 PDF 文件，容器内每次重建需重新 seed（幂等，会重建数据）。
 5. **HTTPS/鉴权**：demo 用 `X-Demo-Role` 模拟 RBAC，生产需接企业 SSO/OIDC 与 TLS 终止。
 6. **观测**：`run_event` / `llm_call` / `audit_log` 已落库；生产可加 Prometheus 指标与结构化日志采集。
+
