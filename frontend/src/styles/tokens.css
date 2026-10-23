@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+/* 设计令牌：与 design/tokens.json、pen.dev 画布变量三处同源（Spec §9.2） */
+:root {
+  --bg-canvas: #f6f7f9;
+  --bg-surface: #ffffff;
+  --bg-subtle: #eef1f5;
+  --border-default: #e3e7ed;
+  --border-strong: #c9d1db;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --brand-primary: #1d4ed8;
+  --semantic-success: #15803d;
+  --semantic-warning: #b45309;
+  --semantic-danger: #b91c1c;
+  --semantic-info: #0369a1;
+  --run-running: #1d4ed8;
+  --run-awaiting: #b45309;
+  --run-succeeded: #15803d;
+  --run-failed: #b91c1c;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.status-running { background: #eff6ff; color: var(--run-running); }
+.status-awaiting_review { background: #fffbeb; color: var(--run-awaiting); }
+.status-succeeded { background: #f0fdf4; color: var(--run-succeeded); }
+.status-failed { background: #fef2f2; color: var(--run-failed); }
+.status-queued { background: var(--bg-subtle); color: var(--text-secondary); }
+.status-cancelled { background: var(--bg-subtle); color: var(--text-muted); }

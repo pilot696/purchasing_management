@@ -1,0 +1,28 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.cache/
+
+# 环境与密钥（.env.example 入库，.env 不入库）
+.env
+backend/.env
+
+# 前端
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# 生成物：seed 数据与文件体积大，保留 manifest 不保留产物
+data/files/
+data/seed/
+data/gold/
+
+# 工具与 IDE
+.idea/
+.vscode/
+.dsh-acl-recovery/
+*.log

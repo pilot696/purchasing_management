@@ -1,0 +1,93 @@
+# 模型网关配置（Spec §2.5 / §4.2）
+# 价格快照：2026-10-23 官方定价页；仅为工程记账口径，发布前需复核（§13 O1）
+# 角色 -> 跨厂商降级链：任何单厂商故障都不应让 Agent 无法出结论
+
+providers:
+  deepseek:
+    base_url: ${DEEPSEEK_BASE_URL}
+    api_key: ${DEEPSEEK_API_KEY}
+    compat: openai
+  dashscope:
+    base_url: ${DASHSCOPE_BASE_URL}
+    api_key: ${DASHSCOPE_API_KEY}
+    compat: openai
+  zhipu:
+    base_url: ${ZHIPU_BASE_URL}
+    api_key: ${ZHIPU_API_KEY}
+    compat: openai
+  fake:
+    base_url: "fake://local"
+    api_key: ""
+    compat: fake
+
+roles:
+  # 文本推理 / 工具调用 / 结构化抽取（DeepSeek 仅 JSON mode，无 strict schema）
+  reason:
+    provider: deepseek
+    model: deepseek-flash
+    schema_mode: json_object
+    temperature: 0.0
+    timeout_s: 60
+    max_tokens: 2048
+    fallback: [reason_small]
+  # 跨厂商降级：DeepSeek 整体不可用时由智谱承接（JSON mode）
+  reason_small:
+    provider: zhipu
+    model: glm-5.3-flash
+    schema_mode: json_object
+    temperature: 0.0
+    timeout_s: 40
+    max_tokens: 2048
+    fallback: []
+  # 视觉抽取主模型：Qwen 系支持真正的 JSON-Schema 约束解码
+  vision:
+    provider: dashscope
+    model: qwen3.8-max
+    schema_mode: json_schema
+    temperature: 0.0
+    timeout_s: 120
+    max_tokens: 4096
+    fallback: [vision_backup, vision_cheap]
+  vision_cheap:
+    provider: dashscope
+    model: qwen3.8-flash
+    schema_mode: json_schema
+    temperature: 0.0
+    timeout_s: 90
+    max_tokens: 4096
+    fallback: []
+  vision_backup:
+    provider: zhipu
+    model: glm-5.3-flash
+    schema_mode: json_object
+    temperature: 0.0
+    timeout_s: 90
+    max_tokens: 4096
+    fallback: []
+  embed:
+    provider: dashscope
+    model: text-embedding-v4
+    dim: 1024
+    batch: 16
+  rerank:
+    provider: dashscope
+    model: qwen3-rerank
+
+pricing_usd_per_1m:
+  deepseek-flash:
+    in: 0.15
+    out: 0.60
+  qwen3.8-max:
+    in: 1.65
+    out: 4.951
+  qwen3.8-flash:
+    in: null
+    out: null
+  glm-5.3-flash:
+    in: 0.15
+    out: 0.50
+  text-embedding-v4:
+    in: 0.072
+    out: 0.0
+
+fx_usd_cny: 7.1
