@@ -1,4 +1,4 @@
-﻿"""M1 采购申请预检图（Spec §5.2 / §5.4）：规则引擎 + 混合检索 + 语义消歧 + HITL 补字段。
+"""M1 采购申请预检图（Spec §5.2 / §5.4）：规则引擎 + 混合检索 + 语义消歧 + HITL 补字段。
 
 节点链路：load_subject → retrieve → rules_engine → semantic_resolve → compose_report →（interrupt）→ finalize
 - 决策前只写分析结果；`pr_item.spec` 的补丁只在 finalize（accept/edit）事务里写；
@@ -42,6 +42,7 @@ class PrecheckState(TypedDict, total=False):
     decision: str | None
     reviewer_note: str | None
     review_id: str | None
+    edits: list[dict[str, Any]] | None
     finalized: bool
     artifact_id: str | None
 
@@ -408,6 +409,37 @@ def _path_parts(path: str) -> list[str | int]:
     return parts
 
 
+def sanitize_reviewer_edits(edits: list[dict[str, Any]], item_count: int) -> list[dict[str, Any]]:
+    """把 HITL 的 edits 规整成可应用补丁：只允许 pr items 内、有值、路径合法的 patch。"""
+    cleaned: list[dict[str, Any]] = []
+    for patch in edits[:100]:
+        if not isinstance(patch, dict):
+            continue
+        path = str(patch.get("path") or "")
+        parts = _path_parts(path)
+        if len(parts) < 3 or parts[0] != "items":
+            continue
+        # /items/<i>/spec 是整对象，不允许 reviewer 直接替换；spec 下必须有具体 key
+        if parts[2] == "spec" and len(parts) < 4:
+            continue
+        index = parts[1]
+        if not isinstance(index, int) or not (0 <= index < item_count):
+            continue
+        value = patch.get("value")
+        if value in (None, ""):
+            continue
+        cleaned.append(
+            {
+                "op": "replace",
+                "path": path,
+                "value": value,
+                "source": patch.get("source") or "reviewer",
+                "ref": patch.get("ref"),
+            }
+        )
+    return cleaned
+
+
 def apply_patches(items: list[dict[str, Any]], patches: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
     """把补丁应用到内存 items（返回更新后的 items + 实际生效条数）。"""
     updated = [dict(item) for item in items]
@@ -460,9 +492,16 @@ async def _finalize(state: PrecheckState, deps: PrecheckDeps) -> dict[str, Any]:
             await session.scalars(select(t.PrItem).where(t.PrItem.pr_id == pr.id).order_by(t.PrItem.line_no))
         ).all()
         applied = 0
+        edits = state.get("edits")
+        if edits is None:
+            # 兼容旧客户端：未提供 edits 时按推荐补丁全量应用
+            selected_patches = list(report.get("patches", []))
+        else:
+            # 新协议：[] 表示一条都不采纳；否则按勾选/改值后的补丁应用
+            selected_patches = sanitize_reviewer_edits(edits, len(db_items))
         if release:
             memory_items = [{"pr_item_id": str(item.id), "spec": dict(item.spec or {})} for item in db_items]
-            _, applied = apply_patches(memory_items, report.get("patches", []))
+            _, applied = apply_patches(memory_items, selected_patches)
             by_id = {str(item.id): item for item in db_items}
             merged: dict[str, dict[str, Any]] = {}
             for index, memory_item in enumerate(memory_items):
@@ -479,7 +518,7 @@ async def _finalize(state: PrecheckState, deps: PrecheckDeps) -> dict[str, Any]:
                             target_table="pr_item",
                             target_id=db_item.id,
                             action="apply_patch",
-                            patch_json=report.get("patches", []),
+                            patch_json=selected_patches,
                             before_json=before,
                             after_json=dict(memory_item["spec"]),
                             source="agent",
@@ -513,6 +552,8 @@ async def _finalize(state: PrecheckState, deps: PrecheckDeps) -> dict[str, Any]:
                 "decision": decision,
                 "reviewer_note": state.get("reviewer_note"),
                 "applied_patches": applied,
+                "selected_patches": selected_patches,
+                "requested_edits": edits,
             },
         )
         session.add(artifact)
@@ -606,4 +647,5 @@ async def compute_precheck_report(session: AsyncSession, pr_no: str) -> dict[str
     findings = evaluate_rule_findings(context, items)
     findings, patches, items = semantic_resolve(context, items, findings)
     return compose_report(context, items, findings, patches)
+
 

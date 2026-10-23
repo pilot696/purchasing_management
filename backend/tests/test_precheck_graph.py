@@ -162,3 +162,60 @@ async def test_run_service_auto_finalizes_clean_pr() -> None:
     assert snapshot["artifact"] is not None
     assert snapshot["artifact"]["report"]["verdict"] == "pass"
     assert snapshot["artifact"]["decision"] == "accept"
+
+
+async def test_precheck_edits_selects_and_edits_patch() -> None:
+    """HITL 只采纳并改值一条补丁：写回的 spec 必须是改值后的，审计只记录实际应用集合。"""
+    await _seeded()
+    cases = _gold_cases()
+    gold = None
+    for case in cases:
+        if case.get("anomaly") != "missing_field":
+            continue
+        if await _pr_status(case["pr_no"]) == "submitted":
+            gold = case
+            break
+    if gold is None:
+        pytest.skip("没有处于 submitted 的 missing_field PR（需 reseed）")
+
+    subject = {"pr_no": gold["pr_no"]}
+    run_id = await _create_run(subject)
+    graph = build_precheck_graph(_deps())
+    config = {"configurable": {"thread_id": str(run_id)}}
+    state = await graph.ainvoke({"run_id": str(run_id), "subject": subject}, config)
+    report = state["report"]
+    patches = report.get("patches") or []
+    if not patches:
+        pytest.skip(f"{gold['pr_no']} 没有建议补丁，换一条用例如需")
+
+    patch = patches[0]
+    path = patch["path"]
+    leaf = path.rsplit("/", 1)[-1]
+    index = int(path.split("/")[2])
+    custom_value = 32 if leaf == "memory_gb" else 3
+    edits = [{"path": path, "value": custom_value, "source": "reviewer", "ref": "manual"}]
+
+    await graph.aupdate_state(
+        config,
+        {"decision": "edit", "reviewer_note": "只采纳并修改一条", "review_id": None, "edits": edits},
+    )
+    final_state = await graph.ainvoke(None, config)
+    assert final_state["finalized"] is True
+
+    async with get_session_factory()() as session:
+        pr = await session.scalar(select(t.Pr).where(t.Pr.pr_no == gold["pr_no"]))
+        items = (
+            await session.scalars(select(t.PrItem).where(t.PrItem.pr_id == pr.id).order_by(t.PrItem.line_no))
+        ).all()
+        assert items[index].spec.get(leaf) == custom_value
+        artifact = await session.scalar(select(t.Artifact).where(t.Artifact.run_id == run_id))
+        assert artifact is not None
+        assert artifact.payload["applied_patches"] == 1
+        assert artifact.payload["selected_patches"][0]["value"] == custom_value
+        assert artifact.payload["decision"] == "edit"
+        audits = (
+            await session.scalars(select(t.AuditLog).where(t.AuditLog.run_id == run_id))
+        ).all()
+        apply_logs = [row for row in audits if row.action == "apply_patch"]
+        assert len(apply_logs) == 1
+        assert len(apply_logs[0].patch_json or []) == 1

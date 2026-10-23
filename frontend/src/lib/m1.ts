@@ -169,3 +169,43 @@ export function candidateSourcesText(sources: string[]): string {
 export function roleCanReviewM1(role: string): boolean {
   return role === "buyer" || role === "admin";
 }
+
+export interface PatchSelection {
+  checked: boolean;
+  value: string;
+}
+
+export function initialPatchSelections(patches: M1Patch[]): Record<number, PatchSelection> {
+  const selections: Record<number, PatchSelection> = {};
+  patches.forEach((patch, index) => {
+    selections[index] = {
+      checked: true,
+      value: patch.value === null || patch.value === undefined ? "" : String(patch.value),
+    };
+  });
+  return selections;
+}
+
+function parseEditedValue(original: unknown, text: string): unknown {
+  if (typeof original === "number") {
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : original;
+  }
+  if (typeof original === "boolean") {
+    return text === "true";
+  }
+  return text;
+}
+
+export function buildSelectedEdits(
+  patches: M1Patch[],
+  selections: Record<number, PatchSelection>,
+): M1Patch[] {
+  return patches
+    .map((patch, index) => ({ patch, selection: selections[index] }))
+    .filter(({ selection }) => selection?.checked)
+    .map(({ patch, selection }) => ({
+      ...patch,
+      value: parseEditedValue(patch.value, selection?.value ?? ""),
+    }));
+}

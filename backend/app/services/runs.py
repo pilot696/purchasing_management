@@ -107,7 +107,7 @@ class _Handle:
     run_id: UUID
     resume_event: asyncio.Event = field(default_factory=asyncio.Event)
     decision: str | None = None
-    edits: list[dict[str, Any]] = field(default_factory=list)
+    edits: list[dict[str, Any]] | None = None
     note: str | None = None
     review_id: UUID | None = None
     task: asyncio.Task[None] | None = None
@@ -412,7 +412,7 @@ class RunService:
         *,
         review_id: UUID,
         decision: str,
-        edits: list[dict[str, Any]],
+        edits: list[dict[str, Any]] | None,
         note: str | None,
     ) -> None:
         handle = self._handles.get(run_id)
@@ -753,5 +753,6 @@ class RunService:
                 for policy in tolerances
             ],
         }
+
 
 

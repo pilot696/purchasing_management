@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   asM1Report,
   budgetBar,
+  buildSelectedEdits,
   candidateSourcesText,
   findingTypeLabel,
   formatPatchValue,
   formatSpecValue,
+  initialPatchSelections,
   patchPathLabel,
   patchSourceLabel,
   roleCanReviewM1,
@@ -118,5 +120,42 @@ describe("展示映射", () => {
     expect(roleCanReviewM1("buyer")).toBe(true);
     expect(roleCanReviewM1("admin")).toBe(true);
     expect(roleCanReviewM1("requester")).toBe(false);
+  });
+});
+
+describe("buildSelectedEdits", () => {
+  const patches = [
+    { op: "add", path: "/items/0/spec/memory_gb", value: 16, from: null, source: "catalog_sku" },
+    { op: "add", path: "/items/0/spec/owner", value: "张三", from: null, source: "requester_profile" },
+  ];
+
+  it("只返回勾选补丁，并按原类型解析编辑值", () => {
+    const edits = buildSelectedEdits(patches, {
+      0: { checked: true, value: "32" },
+      1: { checked: false, value: "李四" },
+    });
+    expect(edits).toHaveLength(1);
+    expect(edits[0].value).toBe(32);
+    expect(edits[0].path).toBe("/items/0/spec/memory_gb");
+  });
+
+  it("未勾选任何补丁时返回空数组（后端按 0 条应用）", () => {
+    expect(buildSelectedEdits(patches, { 0: { checked: false, value: "" }, 1: { checked: false, value: "" } })).toEqual([]);
+  });
+
+  it("布尔/文本值保持原类型", () => {
+    const edits = buildSelectedEdits(
+      [{ op: "replace", path: "/items/0/spec/urgent", value: true }],
+      { 0: { checked: true, value: "false" } },
+    );
+    expect(edits[0].value).toBe(false);
+    const text = buildSelectedEdits(patches, { 1: { checked: true, value: "李四" } });
+    expect(text[0].value).toBe("李四");
+  });
+
+  it("initialPatchSelections 默认全选并格式化值", () => {
+    const selections = initialPatchSelections(patches);
+    expect(selections[0]).toEqual({ checked: true, value: "16" });
+    expect(selections[1].value).toBe("张三");
   });
 });

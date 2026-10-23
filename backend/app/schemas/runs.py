@@ -29,7 +29,8 @@ class StartRunResponse(BaseModel):
 class ResumeRequest(BaseModel):
     review_id: UUID
     decision: Decision
-    edits: list[dict[str, Any]] = Field(default_factory=list)
+    # None = 未提供编辑（按推荐全量应用）；[] = 明确不采纳任何补丁；[patch...] = 逐条采纳/改值
+    edits: list[dict[str, Any]] | None = None
     note: str | None = None
 
 

@@ -1,5 +1,5 @@
-﻿import { useMutation, useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { getDemoRole, getRunSnapshot, resumeRun, startRun } from "../lib/api";
@@ -7,10 +7,12 @@ import { isTerminal } from "../lib/events";
 import {
   asM1Report,
   budgetBar,
+  buildSelectedEdits,
   candidateSourcesText,
   findingTypeLabel,
   formatPatchValue,
   formatSpecValue,
+  initialPatchSelections,
   patchPathLabel,
   patchSourceLabel,
   roleCanReviewM1,
@@ -18,6 +20,7 @@ import {
   verdictMeta,
   verdictToneClass,
 } from "../lib/m1";
+import type { PatchSelection } from "../lib/m1";
 import { useRunStream } from "../lib/useRunStream";
 
 const DEFAULT_PR = "PR-2026-0001";
@@ -27,6 +30,7 @@ export default function Precheck() {
   const [searchParams] = useSearchParams();
   const [runId, setRunId] = useState<string | null>(() => searchParams.get("run"));
   const [decisionError, setDecisionError] = useState<string | null>(null);
+  const [patchSelections, setPatchSelections] = useState<Record<number, PatchSelection>>({});
 
   const role = getDemoRole();
   const run = useRunStream(runId);
@@ -44,6 +48,12 @@ export default function Precheck() {
     return asM1Report(artifact?.report);
   }, [review?.report, snapshot.data?.artifact]);
 
+  useEffect(() => {
+    if (report) setPatchSelections(initialPatchSelections(report.patches));
+  }, [report]);
+
+  const selectedEdits = report ? buildSelectedEdits(report.patches, patchSelections) : [];
+
   const start = useMutation({
     mutationFn: () => startRun("m1", { pr_no: prNo }),
     onSuccess: (response) => {
@@ -54,10 +64,19 @@ export default function Precheck() {
   const decide = useMutation({
     mutationFn: (decision: "accept" | "reject") => {
       if (!runId || !review) throw new Error("当前没有待复核任务");
+      if (decision === "reject") {
+        return resumeRun(runId, {
+          review_id: review.review_id,
+          decision,
+          note: "M1 退回申请人补充",
+        });
+      }
+      const hasPatches = (report?.patches.length ?? 0) > 0;
       return resumeRun(runId, {
         review_id: review.review_id,
-        decision,
-        note: decision === "accept" ? "M1 采纳建议补丁" : "M1 退回申请人补充",
+        decision: hasPatches ? "edit" : "accept",
+        edits: selectedEdits,
+        note: `M1 采纳 ${selectedEdits.length}/${report?.patches.length ?? 0} 条补丁`,
       });
     },
     onError: (error) => setDecisionError(String(error)),
@@ -171,7 +190,9 @@ export default function Precheck() {
                   onClick={() => decide.mutate("accept")}
                   className="rounded-md bg-[var(--semantic-success)] px-3 py-1.5 text-[12px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {decide.isPending ? "提交中…" : "采纳并继续"}
+                  {decide.isPending
+                    ? "提交中…"
+                    : `采纳并继续（${selectedEdits.length}/${report.patches.length}）`}
                 </button>
                 <button
                   type="button"
@@ -301,28 +322,68 @@ export default function Precheck() {
               </div>
 
               <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4">
-                <h2 className="text-sm font-semibold">建议补丁（{report.patches.length}）</h2>
+                <h2 className="text-sm font-semibold">
+                  建议补丁（{report.patches.length}，已选 {selectedEdits.length}）
+                </h2>
                 <p className="mt-1 text-[11px] text-[var(--text-muted)]">
-                  确认后写回 PR 明细（finalize 单事务），每条补丁都记录来源与审计。
+                  勾选并可直接改值；未勾选的补丁不会写回。finalize 单事务 + 审计。
                 </p>
                 <ul className="mt-2 space-y-2">
                   {report.patches.length === 0 && (
                     <li className="text-[12px] text-[var(--text-muted)]">无需补丁。</li>
                   )}
-                  {report.patches.map((patch, index) => (
-                    <li key={`${patch.path}-${index}`} className="rounded-lg border border-[var(--border-default)] p-2 text-[12px]">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-medium">{patchPathLabel(patch.path)}</span>
-                        <span className="rounded bg-[var(--bg-subtle)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)]">
-                          {patchSourceLabel(patch.source)}
-                          {patch.ref ? ` · ${patch.ref}` : ""}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-[11px] text-[var(--text-secondary)]">
-                        {formatPatchValue(patch.from)} → <b>{formatPatchValue(patch.value)}</b>
-                      </div>
-                    </li>
-                  ))}
+                  {report.patches.map((patch, index) => {
+                    const selection =
+                      patchSelections[index] ?? { checked: true, value: formatPatchValue(patch.value) };
+                    return (
+                      <li
+                        key={`${patch.path}-${index}`}
+                        className={`rounded-lg border p-2 text-[12px] ${
+                          selection.checked
+                            ? "border-[var(--border-default)]"
+                            : "border-dashed border-[var(--border-strong)] opacity-60"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <label className="flex items-center gap-2 font-medium">
+                            <input
+                              type="checkbox"
+                              checked={selection.checked}
+                              onChange={(event) =>
+                                setPatchSelections((prev) => ({
+                                  ...prev,
+                                  [index]: { ...selection, checked: event.target.checked },
+                                }))
+                              }
+                              disabled={!awaiting || !canReview}
+                            />
+                            {patchPathLabel(patch.path)}
+                          </label>
+                          <span className="rounded bg-[var(--bg-subtle)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)]">
+                            {patchSourceLabel(patch.source)}
+                            {patch.ref ? ` · ${patch.ref}` : ""}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+                          <span>{formatPatchValue(patch.from)} →</span>
+                          <input
+                            className="w-32 rounded border border-[var(--border-default)] px-1.5 py-0.5 text-[12px]"
+                            value={selection.value}
+                            onChange={(event) =>
+                              setPatchSelections((prev) => ({
+                                ...prev,
+                                [index]: { ...selection, value: event.target.value },
+                              }))
+                            }
+                            disabled={!awaiting || !canReview || !selection.checked}
+                          />
+                          <span className="text-[var(--text-muted)]">
+                            （原建议：{formatPatchValue(patch.value)}）
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             </div>
@@ -338,4 +399,5 @@ export default function Precheck() {
     </div>
   );
 }
+
 
