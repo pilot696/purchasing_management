@@ -16,6 +16,20 @@
 
 ## 留痕记录（倒序追加，最新在上）
 
+### [2026-10-23 14:50] W1-M3 第 2 步：抽取管线（DocumentRouter + pdf_native + validators + bbox）
+- **变更文件**：新增 `backend/app/schemas/extraction.py`、`backend/app/extraction/{router,pdf_native,validators,service}.py`、`backend/tests/test_extraction.py`
+- **GitNexus 影响面**：纯新增模块；`app/schemas/extraction.py` 将成为 M3 图与 API 的公共类型（后续改字段需 impact）
+- **核心设计执行**：
+  - `DocumentRouter`：`text_ratio` 与 Spec 同量纲，阈值 0.15/0.05；模板锚点命中 ≥2 判定（发票/PO/合同）
+  - `pdf_native`：**以 `extract_tables` 为主、正则兜底**（表头 `标签 值` 对映射 + 行项目表列名映射），
+    发票/PO/合同三类解析器统一产出 `DocLine`
+  - bbox 注解：`page.search` → `extract_words` 两级回退，归一化坐标**以左上为原点**（前端 CSS overlay 直接用）
+  - 校验器不抛异常：返回 `ValidationIssue`（算术/税率白名单/日期/数量/账期），`high` 进入 `needs_review_fields`
+  - 扫描件不硬解析：返回 `VLM_REQUIRED` + `needs_review`，为下一步 VLM 留出明确接缝
+- **验证结果**：`pytest tests/test_extraction.py` → **8 passed**（路由 3 类模板、扫描件、发票/PO/合同字段与源数据一致、bbox 归一化、尾差无 high、篡改合计可检出、扫描件待 VLM）；
+  全量后端 **48 passed / 6 skipped** + integration **6 passed**
+- **下一步 (Next)**：扫描件 VLM 抽取（FakeVLM 可测）+ `extraction_record`/`doc_annotation` 落库 + `POST /documents/{id}/extract`
+
 ### [2026-10-23 14:35] W1-M3 自查：修复 5 个数据/配置缺陷（其中 3 个会影响评测可信度）
 - **变更文件**：`backend/app/seed/{dataset,persist}.py`、`backend/tests/{test_seed,test_seed_integrity}.py`、`docker-compose.yml`、`docs/PROJECT_SPEC.md`（§3.5/§7.2 阈值标定 + v1.4）
 - **缺陷与修复**：

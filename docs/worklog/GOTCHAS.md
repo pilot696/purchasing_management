@@ -158,4 +158,18 @@
 - **修复手段**：改为长语法 `{path: ./backend/.env, required: false}`，缺省值由 `environment` 提供（DB URL / FakeLLM）。
 - **防回归**：`scripts/dev.ps1 up` 前已有 `.env` 检查；README 快速开始第 1.5 步给复制命令。
 
+## G-017｜pdfplumber 抽取的三个陷阱：捕获组、`page.search` 失效、表头分散
+- **问题现象**：首版解析器全部 `PARSE_EXCEPTION: IndexError: no such group`；修掉后又发现
+  ① `page.search("INV-2026-3001")` 返回空（发票号/金额搜不到），② 表头字段散落在多张表的行里，单行匹配拿不全。
+- **根因定位**：
+  1. `_find()` 统一 `match.group(1)`，但 `PO-\d{4}-\d{4}` 等正则**没有捕获组** → `IndexError`；
+  2. pdfplumber 的 `search()` 依赖字符相邻性，表格单元格里的连字符/数字组合可能不连续，导致文本层可读但 `search` 为空；
+  3. ReportLab 表格把 `订单号/下单日期`、`供应商/币种` 等放在**不同行**，只按"包含 订单号 的那一行"取键会漏字段。
+- **修复手段**：
+  1. `_search()` 按 `match.groups()` 决定取组 1 还是整体；
+  2. bbox 采用两级回退：`page.search` → `page.extract_words()` 精确词匹配；金额候选去掉 `¥` 再搜；
+  3. 表头统一走 `_header_map()`：扫描所有表的所有"标签/值"对，跳过行项目表头，`setdefault` 合并。
+- **防回归**：`test_extraction.py` 8 条（字段一致性、bbox 归一化、三类模板路由、扫描件待 VLM、篡改合计可检出）。
+- **教训（可讲）**：`extract_text()` 能读 ≠ `search()` 能定位；**以表格结构为主、正则只做兜底**比"全文正则一把梭"稳一个量级。
+
 <!-- 追加位置：新踩坑写在本行上方 -->

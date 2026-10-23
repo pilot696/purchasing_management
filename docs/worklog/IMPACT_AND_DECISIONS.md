@@ -12,6 +12,19 @@
 
 ## 决策记录（倒序追加，最新在上）
 
+### ADR-015｜抽取管线「结构优先、正则兜底」，bbox 采用左上原点归一化
+- **触发原因**：Spec §7.2 要求"确定性优先、VLM 只兜底"。首版实现按全文正则抽取，三类文档全部解析失败/
+  字段不全（GOTCHAS G-017），说明 ReportLab 表格的文本布局不适合纯正则。
+- **GitNexus impact**：纯新增（`app/extraction/*`、`app/schemas/extraction.py`）；`schemas/extraction.py` 将是
+  M3 图与 API 的公共类型，后续修改需先 `impact`。
+- **最终方案**：
+  1. 抽取以 `page.extract_tables()` 的结构为准：`_header_map()` 汇总"标签/值"对，`_lines_from_table()` 按列名映射；
+     正则只用于"表格外"的单值字段兜底；
+  2. bbox 统一为**左上原点归一化坐标**（x0,y0,x1,y1 ∈ [0,1]，y 向下），`doc_annotation` 与前端 overlay 同一套语义；
+  3. 校验器返回 `ValidationIssue` 而非抛异常，`high` 级问题进入 `needs_review_fields`，不阻塞后续匹配；
+  4. 扫描件显式返回 `VLM_REQUIRED`，与数字原生路径解耦，VLM 后续接入时只替换这一分支。
+- **同步更新 Spec**：§3.5 `doc_annotation` 增加"坐标为左上原点归一化"约定；§13.3 v1.5。
+
 ### ADR-014｜用数据工厂标定路由阈值，并修复种子数据 4 处一致性缺陷
 - **触发原因**：W1-M3 开工前自查发现：`po_line.qty_received` 未落库、`text_ratio` 口径与 Spec 阈值不符、PR gold 的
   `over_budget` 与真实预算不一致、`pr_item` 的 owner/cost_center 在持久化时丢失（GOTCHAS G-014/G-015）。

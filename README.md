@@ -22,9 +22,13 @@
 - **数据工厂已验证**（W1-M3 第 1 步）：`scripts/seed.py --seed 42` 生成 **230 份 PDF（含 23 份扫描件）/ 8.5MB**、
   120 份 M1 gold、80 组 M3 gold；DB 落 30 供应商 / 100 SKU / 300 历史成交行 / 120 PR / 80 组三单。
 
-尚未落地（按 Spec §11 里程碑）：M3 抽取/对齐/容差（W1）、M1 规则与检索（W2）、M2 评分（W3）、
-pen.dev 画布与部署（W4）。P0 的演示节点序列（`load_subject → rules_engine → compose_result`）是占位，
-W1 起由 LangGraph 图替换，事件/复核/事务契约不变。
+尚未落地（按 Spec §11 里程碑）：M3 行对齐/容差/核销与 matching_graph（W1 剩余）、M1 规则与检索（W2）、
+M2 评分（W3）、pen.dev 画布与部署（W4）。P0 的演示节点序列（`load_subject → rules_engine → compose_result`）
+是占位，W1 起由 LangGraph 图替换，事件/复核/事务契约不变。
+
+M3 抽取管线（W1 第 2 步）已完成：`DocumentRouter`（文本层占比 + 模板锚点分流）、`pdf_native`
+（表格结构优先、正则兜底，产出 Pydantic 模型 + 归一化 bbox）、确定性校验器（算术/税率/日期/数量）、
+扫描件显式标记 `VLM_REQUIRED`。
 
 ## 快速开始（Windows）
 

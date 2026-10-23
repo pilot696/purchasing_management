@@ -440,7 +440,7 @@ CREATE TABLE doc_annotation (            -- PDF 抽屉高亮的坐标源
   field_name text NOT NULL,              -- invoice_no|amount_tax_incl|qty...
   line_ref   text,                       -- invoice_line:3 / po_line:2
   page_no    int NOT NULL,
-  x0 numeric(6,5), y0 numeric(6,5), x1 numeric(6,5), y1 numeric(6,5),  -- 归一化 0~1
+  x0 numeric(6,5), y0 numeric(6,5), x1 numeric(6,5), y1 numeric(6,5),  -- 归一化 0~1，**左上原点（y 向下）**
   text_raw   text,
   confidence numeric(4,3),
   created_at timestamptz DEFAULT now()
@@ -2461,6 +2461,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-23 | v1.2 | 运行时入口补充：新增 `backend/run.py` 与 `app/core/loop.py`，修正 Windows 下 uvicorn 单进程硬编码 `ProactorEventLoop` 导致 psycopg 异步连接全不可用的问题（§2.3、附录 A.3；排障见 worklog GOTCHAS G-009） | W0 端到端联调实测 |
 | 2026-10-23 | v1.3 | 数据工厂落地（§10）：`build_dataset` 纯函数 + `persist_dataset` 落库；230 份 PDF（含 23 份扫描件）、120 份 M1 gold、80 组 M3 gold；异常槽位精确覆盖 §10.3 每类数量；`requires_gr` 驱动收货单生成 | W1-M3 第 1 步实现 |
 | 2026-10-23 | v1.4 | 数据口径修复（自查发现）：`text_ratio` 改为"每 1e3 pt² 字符数"并**将路由阈值从 0.6 标定为 0.15**（原生 PO 实测 0.435~0.509、发票 0.698~0.788、扫描件 0）；`doc.text_ratio` 列类型 numeric(6,4)；`po_line.qty_received` 由收货行汇总回填；PR gold 的 `over_budget` 与 verdict 统一由真实预算/规则推导，新增 block 样本 | W1-M3 开工前自查 |
+| 2026-10-23 | v1.5 | M3 抽取管线落地：`DocumentRouter` + `pdf_native`（**表格结构优先、正则兜底**）+ 校验器 + bbox 注解；`doc_annotation` 坐标明确为**左上原点归一化**；扫描件显式返回 `VLM_REQUIRED` 接缝 | W1-M3 第 2 步实现 |
 
 ---
 
