@@ -16,6 +16,20 @@
 
 ## 留痕记录（倒序追加，最新在上）
 
+### [2026-10-23 19:10] W4：评测报告 + pen.dev 设计资产 + 容器化部署 + 简历数字回填
+- **变更文件**：新增 `docs/EVAL_REPORT.md`、`evals/latest.json`、`docs/DEPLOYMENT.md`、根 `Dockerfile`、`.dockerignore`、`design/{tokens.json,design.pen,preview.html,README.md}`、`scripts/gen_design_pen.py`；修改 `docker-compose.yml`（api 多阶段构建 + healthcheck）、`README.md`（状态/部署/链接）、`docs/PROJECT_SPEC.md`（§9.4/§12/版本 v1.13）、`Makefile`（eval/up-app/seed-docker/design）
+- **核心实现**：
+  - **评测**：四套基线汇总为 `EVAL_REPORT.md`（抽取/M1/M2/M3/工程验证/复现命令），并写清 7 条诚实边界（合成数据、金标同源、离线 FakeLLM、向量 leg 未接、M2 无专家 gold、MemorySaver 单进程、人工基线估算）；`evals/latest.json` 为可机读快照，未测项列入 `pending_measurements`；
+  - **设计资产**：`scripts/gen_design_pen.py` 以 `tokens.json` 为源生成 pen.dev schema 2.14 文档（6 个 1440×900 artboard：Run 中心/M1/M2/M3/规则库/可观测）+ 静态 `preview.html`；生成即自检变量引用与页面数（`DESIGN_OK`），避免手改 `.pen`；
+  - **部署**：根 `Dockerfile` 两阶段（node 构建前端 dist → python 运行时，保留 backend/scripts/data 相对布局，FastAPI 同端口托管 SPA）；compose api 改为根上下文构建、启动自动 `alembic upgrade head`、内置 healthcheck；`DEPLOYMENT.md` 记录 compose/本机两种形态、配置项、生产限制（MemorySaver 单副本、迁移、缓存、SSO/TLS）；
+  - **简历数字**：Spec §12 的 `{{...}}` 全部替换为实测值（M1 verdict 100%/findings F1 1.0/检索 top-1 100%、M2 闸门 100%/误报 0%/冷启动 100%/flip 5.55%、M3 行对齐 F1 1.0/差异 recall 1.0、发票字段 100%/p95 46.14ms、测试与 e2e 数），未测项保留"未测/待接入"标注，不编数字。
+- **验证结果**：
+  - `python scripts/gen_design_pen.py` → `DESIGN_OK`（6 artboards，design.pen≈199KB，preview.html≈98KB，变量引用自检通过）；
+  - `docker compose config --quiet` 通过；本机生产形态（uvicorn 托管 `frontend/dist`）：`/` 200 text/html、`/assets/index-*.js` 200（360,902B）、`/healthz` 200；
+  - **Docker 镜像构建未完成**：本机 Docker 无法访问 Docker Hub（`auth.docker.io` 连接超时），属网络环境限制（G-038），已记录并在 DEPLOYMENT §1 给出代理前置条件；应用层托管路径已用非容器方式验证；
+  - 本轮未改后端/前端业务代码：上一轮全量测试结果仍有效（后端 88 passed/18 skipped、集成 17 passed/1 skipped、前端 39 passed、四套 e2e OK）。
+- **下一步 (Next)**：无剩余里程碑；可选：接入真实 LLM key 回填成本/质量指标、配置 Docker Desktop 代理后跑 `docker compose up -d --build` 复核镜像。
+
 ### [2026-10-23 18:55] W3-M2：供应商准入与履约评估（五维评分 + 6 闸门 + LLM 复核者 + 看板）
 - **变更文件**：新增 `backend/app/scoring/supplier.py`、`backend/app/agents/supplier.py`、`backend/app/schemas/supplier.py`、`backend/tests/{test_scoring,test_supplier_graph}.py`、`scripts/{m2_eval,smoke_m2}.py`、`evals/m2_baseline.json`、`frontend/src/lib/m2.ts`(+`.test.ts`)；重写 `frontend/src/pages/Supplier.tsx`；修改 `services/runs.py`（M2 图分派）、`main.py`（装配 supplier 图）、`seed/dataset.py`（证照基准有效期）、`pages/RunCenter.tsx`（M2 跳转）、`scripts/smoke_e2e.py`（走真实 M2 契约）
 - **核心实现**：

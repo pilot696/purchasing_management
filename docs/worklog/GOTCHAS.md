@@ -323,4 +323,13 @@
 - **修复手段**：expected 只取 `value` 为真的键；误报改为"无 veto 预期却出现 veto 闸门"（并与冷启动/条件项区分）。
 - **防回归**：`scripts/m2_eval.py` 输出 gate_detection.recall=100%、false_positive_rate=0、extra_hits=0。
 
+## G-038｜本机 Docker 无法访问 Docker Hub：镜像构建卡在拉基础镜像
+- **问题现象**：`docker compose build api` 报 `failed to authorize ... Post "https://auth.docker.io/token": dial tcp 162.125.83.1:443: connectex: A connection attempt failed`；
+  `docker pull node:22-slim` 20s 超时。本机只缓存了 `pgvector/pgvector:pg16`，python/node 基础镜像都没有。
+- **根因定位**：Docker daemon 直连 Docker Hub 被网络拦截（无 HTTP_PROXY 环境、Docker Desktop 未配代理），与 Dockerfile 无关；
+  shell 里也没有代理变量，改 `pip/npm` 镜像源只影响构建阶段命令、不影响 daemon 拉镜像。
+- **修复/规避**：交付层保留根 `Dockerfile` + compose `api` 服务；用 `docker compose config` 验证编排合法性，
+  用**非容器生产形态**（uvicorn 托管 `frontend/dist`）验证 SPA/API 同端口路径；文档明确"构建需 Docker Desktop 配置代理"。
+- **防回归**：`docs/DEPLOYMENT.md` §1 写清前置条件与典型报错；把 `docker compose config` 纳入提交前检查（本轮已过）。
+
 <!-- 追加位置：新踩坑写在本行上方 -->

@@ -12,6 +12,20 @@
 
 ## 决策记录（倒序追加，最新在上）
 
+### ADR-023｜W4 交付形态：设计稿脚本化同源 + 单镜像托管 SPA
+- **触发原因**：D13 要求 pen.dev 只做设计稿、代码 UI 手写；W4 需要可复现的设计资产（不能手改 `.pen` 导致三处漂移）；
+  部署需要"新机器一条命令起来"，但不想维护 nginx + 前端独立容器。
+- **GitNexus impact**：本轮无后端/前端业务符号变更；`backend/app/main.py` 已有 `FRONTEND_DIST` 静态托管逻辑（只读复用），
+  compose 仅改构建上下文与 healthcheck；风险主要在文档与镜像构建。
+- **最终方案**：
+  1. 设计资产由 `scripts/gen_design_pen.py` 从 `tokens.json` 生成 `.pen` + `preview.html`，生成后自检（6 页、变量引用可解析），
+     保证与 `tokens.css` 同源；
+  2. 根 `Dockerfile` 两阶段：node 构建前端 → python 3.12 运行时，复制 `backend/ scripts/ data/aliases.yaml` 与前端 dist，
+     保留本地相对布局（`main.py` 的 `FRONTEND_DIST` 无需改），启动自动迁移；
+  3. compose 单 `api` 服务 + `db`，healthcheck 用 python urllib（slim 镜像无 curl）；
+  4. 诚实记录 Docker Hub 不可达（G-038）与生产限制（MemorySaver 单进程等）。
+- **同步更新 Spec**：§9.4 W4 实现口径、§12 数字回填、§13.3 v1.13。
+
 ### ADR-022｜M2 图：闸门短路 + 纯函数评分 + LLM 只写叙述 + 离线降级
 - **触发原因**：Spec §6 要求"分数由公式算、闸门由规则判、叙述由模型写"，且闸门命中不得让 LLM 有机会美化否决项。
 - **GitNexus impact**：`RunService` 上游 4 个文件（main/api deps/runs/api init），risk **LOW**；`supplier_graph` 新增不影响既有 M1/M3 图；

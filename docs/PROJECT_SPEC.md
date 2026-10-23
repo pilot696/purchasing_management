@@ -1,7 +1,7 @@
 # 企业通用间接采购智能管理与风控系统 — PRD & Agent Spec
 
 > **Procurement AI Agent Workbench**｜全栈 + Multi-Agent 工程级需求与技术架构说明书
-> 版本：v1.1（访谈定稿 + 定稿前审阅修订）｜日期：2026-10-23｜目标岗位：AI 应用 / Agent 开发工程师
+> 版本：v1.13（W4 收尾：M2 落地、评测报告、pen.dev 设计资产、容器化部署、简历数字回填）｜日期：2026-10-23｜目标岗位：AI 应用 / Agent 开发工程师
 > 本文档是开发与 pen.dev 画布设计的**唯一事实来源**。任何实现偏离需在 §13 变更记录中登记。
 
 ---
@@ -2226,6 +2226,12 @@ Evals view variant: 4 metric tables with baseline bars.
 3. **禁止**把生成的 HTML 直接放进 `frontend/src`（无交互、无类型、无状态），组件实现以 §9.5 契约手写。
 4. 预算：1 个月 Pro（$16）足够；若 agent-day 配额紧张，只让 pen.dev 生成设计系统 + 6 页静态 frame，代码全部手写。
 
+> **W4 实现口径（v1.13）**：`design/design.pen`（pen.dev schema 2.14，6 个 1440×900 artboard）由
+> `scripts/gen_design_pen.py` 从 `design/tokens.json` 生成，与 `frontend/src/styles/tokens.css` 三处同源；
+> 同脚本产出 `design/preview.html` 静态预览，并自检 page 数=6、`$variable` 引用可解析。
+> 未在 pen.dev GUI 内做像素级走查（设计稿用于评审/交接）；代码 UI 仍是唯一实现（D13）。
+> 部署见 `docs/DEPLOYMENT.md`（多阶段 Dockerfile + compose api 服务，SPA 同端口托管）。
+
 ---
 
 ## 10. 数据工厂与评测方案（D14）
@@ -2389,6 +2395,10 @@ make eval SUITE=m3        # 单套件
 
 > **数字全部用占位符 `{{...}}`，由 `evals/latest.json` 回填后再写进简历。严禁先编数字。** 占位符清单见 §12.4。
 
+> **数字回填口径（W4）**：占位符已按 `evals/latest.json`（2026-10-23 离线基线）回填；**未测项明确标注**
+> （无真实 LLM、无 M2 专家 gold、向量 leg 未接）。合成数据上的 100% 只代表"实现与数据工厂金标一致"，
+> 面试时必须主动说明（见 `docs/EVAL_REPORT.md` §7）。
+
 ### 12.1 STAR-1｜多模态单据抽取：把"看起来能抽"做成"可审计地抽"
 
 - **S**：间接采购的合同/发票 15% 是扫描件，人工逐行录入与核对平均 8 分钟/组，且金额/税率错漏后果严重。
@@ -2397,7 +2407,9 @@ make eval SUITE=m3        # 单套件
   1. 设计 `DocumentRouter` 按文本层比例+版式模板分流：数字 PDF 走 `pdfplumber` 文本/表格 + 正则 + 算术校验；扫描件走 VLM + JSON Schema 约束 + Pydantic 校验 + 带错误回填的 repair loop（≤2 次）。
   2. 抽取阶段同步产出 `doc_annotation`（归一化 bbox），前端 PDF.js 叠加高亮，实现"字段 → 原件坐标"可追溯。
   3. 用 ReportLab + 退化管线自建 80 组合成单据与自动金标，做"原生 vs 扫描""全 VLM vs 混合"的消融。
-- **R**：字段级 F1 `{{M3_FIELD_F1}}`（数字原生 `{{M3_FIELD_F1_NATIVE}}`，扫描件 `{{M3_FIELD_F1_SCAN}}`）；单票成本 `{{M3_COST_PER_INVOICE}}`（对比全 VLM `{{M3_COST_VLM_ONLY}}`）；端到端 P95 `{{M3_P95}}`。
+- **R**：发票关键字段（发票号/价税合计/销方名称）准确率 **100%**（n=68 数字发票，正则+算术交叉校验）；237 份文档路由
+  native 213 / scanned 24，native 抽取 p95 **46.14ms**；扫描件字段级准确率与单票成本**未测**（离线 FakeLLM 未跑 VLM，
+  接入真实视觉模型后回填扫描件字段准确率与单票成本）。
 
 ### 12.2 STAR-2｜规则引擎 + 混合检索：把"AI 建议"变成"可复现结论"
 
@@ -2407,7 +2419,9 @@ make eval SUITE=m3        # 单套件
   1. `category_template` + 声明式规则表（JSONLogic 安全子集 + 受限函数注册表），verdict 由规则引擎按优先级算出，模型 schema 里没有 verdict 字段。
   2. 三语料（SKU/历史成交行/政策条款）单库混合检索：SQL pre-filter + pgvector + 词法 + RRF + rerank，价格基准用 `spec_bucket` 时间衰减分位数（P25/P50/P75/IQR）。
   3. LLM 输出强制带 evidence，后置校验引用存在性；量化"引用幻觉率"。
-- **R**：verdict 一致率 `{{M1_VERDICT_ACC}}`（基线单 prompt `{{M1_VERDICT_ACC_BASE}}`）；规则级 F1 `{{M1_RULE_F1}}`；歧义检出率 `{{M1_AMBIG_RECALL}}`；检索 recall@5 从 `{{RET_RECALL_DENSE}}` 提升到 `{{RET_RECALL_HYBRID}}`；单次成本 `{{M1_COST}}`。
+- **R**：verdict 一致率 **100%**（120 条，6 类异常各 20；verdict 由规则引擎算出、不在 LLM schema 中，故无"单 prompt 基线"）；
+  findings micro F1 **1.0**（tp=112，fp=fn=0）；检索 top-1 等价类准确率 **100%**（105 条无歧义样本，词法+精确+规格桶 RRF）；
+  向量 leg 与 recall@5 消融**未做**（embedding provider 未接入，ADR-020），单次成本 **¥0**（离线确定性链路）。
 
 ### 12.3 STAR-3｜三单匹配：确定性算法 + 容差模型 + HITL
 
@@ -2417,26 +2431,31 @@ make eval SUITE=m3        # 单套件
   1. 三级对齐（精确键 → `spec_bucket` 归一 → 向量/rerank 语义）构造得分矩阵，用匈牙利算法做全局最优一对一指派（对比贪心）。
   2. 五类容差表（单价/金额/税率/数量/交期 + 尾差池）落库可配，PO 行 `ordered/received/invoiced/remaining` 状态机支持分批开票与尾差自动平账。
   3. HITL：`interrupt_before` 中断 → 前端复核卡 → `resume` 续跑，事件可回放。
-- **R**：行对齐 F1 `{{M3_LINE_F1}}`（贪心基线 `{{M3_LINE_F1_GREEDY}}`）；5 类 diff recall `{{M3_DIFF_RECALL}}`；误报率 `{{M3_FALSE_POSITIVE}}`；单组耗时 `{{M3_P95}}` vs 人工 8min（估算）。
+- **R**：行对齐 F1 **1.0**（80 组；贪心同样 1.0——种子每组仅 1 个 PO 行，匈牙利优势由冲突矩阵单测证明）；
+  6 类 diff micro recall **1.0**（60/60），误报 **0**；确定性算法耗时 **2.1ms/组**；端到端 P95 **未测**
+  （人工 8min/组为面板估算，标注 estimated）。
 
 ### 12.4 STAR-4｜可观测性与成本治理（工程成熟度）
 
 - **S**：LLM 应用最常见的质疑是"不可控、不可算账"。
 - **T**：让每次调用可记账、每次运行可回放、成本可归因到模块。
-- **A**：自写 OpenAI 兼容网关（路由/降级/重试/缓存/结构化 repair），每次调用落 `llm_call`，每步落 `run_event`，UI 提供 trace 与成本看板；评测缓存按 `sha256(model+prompt+schema)` 命中率 `{{CACHE_HIT}}`。
-- **R**：全项目 API 成本 `{{TOTAL_COST}}`（`{{TOKEN_IN}}/{{TOKEN_OUT}}` tokens，`{{N_RUNS}}` 次运行）；缓存命中率 `{{CACHE_HIT}}`；单模块成本占比可解释。
+- **A**：自写 OpenAI 兼容网关（路由/降级/重试/缓存/结构化 repair），每次调用落 `llm_call`，每步落 `run_event`，UI 提供 trace 与成本看板；评测缓存按 `sha256(model+prompt+schema)` 命中（**离线未测**，接入真实模型后回填命中率）。
+- **R**：全项目 API 成本 **¥0**（离线 FakeLLM：真实 API 未接入，成本/缓存命中率待回填）；离线 e2e 运行 tokens=0、cost=0；
+  `llm_call`/`run_event` 记账与回放已在 M1/M2/M3 真实 e2e 冒烟中验证。
 
 ### 12.5 简历三条 bullet（成稿模板）
 
 ```text
 · 独立设计并实现间接采购 AI 工作台（FastAPI + LangGraph + PostgreSQL/pgvector + React），
-  以「确定性规则引擎 + LLM 语义层 + HITL」架构完成 3 个 Agent，覆盖 PR 预检 / 供应商评估 / 三单核销；
-  自建合成数据工厂（80 组合规与异常单据、生成即金标），端到端可复现评测：字段级 F1 {X}、
-  行对齐 F1 {Y}、verdict 一致率 {Z}。
-· 设计三级行对齐（精确/规格桶/语义）+ 匈牙利指派 + 五类容差与分批核销状态机，
-  将三单差异检出 recall 提升至 {A}（贪心基线 {B}），单组处理 P95 {C}s（人工基线 8min，估算）。
-· 自写模型网关（路由/降级/缓存/结构化 repair）与自建可观测表，实现 token 级成本归因，
-  全项目 API 成本 {D}；混合检索（pgvector + 词法 + RRF + rerank）使 recall@5 从 {E} 提升至 {F}。
+  以「确定性规则引擎 + LLM 语义层 + HITL」架构完成 3 个 Agent：PR 预检 / 供应商评估 / 三单核销；
+  自建合成数据工厂（120 条 PR、80 组三单、30 家供应商，生成即金标），可复现评测：
+  M1 verdict 一致率 100%（120 条）、M2 闸门检出 100%（9/9）、M3 行对齐 F1 1.0（80 组）。
+· 设计三单行级对齐（精确键/规格桶/语义）+ 匈牙利指派 + 五类容差与分批核销状态机，
+  差异检出 recall 100%（60/60，误报 0）；HITL 中断-恢复与 PDF bbox 高亮全链路打通；
+  后端 88 单测 + 17 集成、前端 39 单测、4 套真实 e2e 冒烟（M1/M2/M3/demo）。
+· 自写 OpenAI 兼容网关（路由/降级/重试/缓存/结构化 repair）与可观测表（run_event 回放、
+  llm_call 记账、evidence 引用后置校验），每条结论可追溯到规则/证据/人工决策；
+  当前离线基线成本 ¥0（FakeLLM），真实模型成本与缓存命中率待接入后回填。
 ```
 
 ### 12.6 答辩预案（面试官最可能追问的 12 问）
@@ -2503,6 +2522,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-23 | v1.10 | W2-M1 后端落地：规则 DSL（JSONLogic 白名单 + `required`/`fn` 算子）、混合检索（词法/精确/结构化 + RRF，向量 leg 待 embed）、`precheck_graph`（五节点 + 自动放行 + 补丁 finalize）、`scripts/m1_eval.py` 基线（verdict/findings 100%、检索 top-1 100%）、`scripts/smoke_m1.py`；数据工厂规则与 gold 对齐（17 条规则） | W2-M1 第 1~3 步实现 |
 | 2026-10-23 | v1.11 | M1 前端工作台落地（`/precheck`：结论横幅 + 预算条 + 字段/规格与检索候选 + findings + 补丁采纳 + 自动放行提示，RunCenter 跳转）；前端 32 单测、构建通过 | W2-M1 第 4 步实现 |
 | 2026-10-23 | v1.12 | W3-M2 落地：`supplier_graph`（6 硬闸门短路 + 五维确定性评分 + 权重敏感性 + LLM 复核者 + HITL + finalize 单事务）、`app/scoring/supplier.py` 纯函数、M2 前端供应商看板（闸门条 + SVG 雷达 + 维度明细 + LLM 风险卡）、`scripts/m2_eval.py` 离线基线（30 家：闸门 100%/误报 0%/冷启动 100%/flip 5.55%）、`scripts/smoke_m2.py`；seed 证照基准有效期与闸门标记契约修复 | W3-M2 第 1~5 步实现 |
+| 2026-10-23 | v1.13 | W4 收尾：`docs/EVAL_REPORT.md` + `evals/latest.json`（四套基线汇总、7 条诚实边界、复现命令）；`design/tokens.json` + `design/design.pen`（schema 2.14，6 artboards）+ `preview.html` + `scripts/gen_design_pen.py`；根 `Dockerfile`（多阶段：前端构建→Python 运行时同端口托管）+ compose `api` 服务（迁移自动、healthcheck）+ `docs/DEPLOYMENT.md`；Spec §12 简历数字按实测回填（未测项显式标注） | W4 第 1~4 步实现 |
 
 ---
 

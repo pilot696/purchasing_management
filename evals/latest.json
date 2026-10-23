@@ -1,0 +1,70 @@
+{
+  "generated_at": "2026-10-23T19:10:00",
+  "seed": 42,
+  "llm_mode": "offline-fake-llm",
+  "real_api_cost": "not_measured",
+  "extraction": {
+    "docs": 237,
+    "route_distribution": { "pdf_native": 213, "scanned": 24 },
+    "native_failures": 24,
+    "invoice_field_accuracy": { "invoice_no": 1.0, "amount_tax_incl": 1.0, "seller_name": 1.0 },
+    "invoice_field_n": 68,
+    "latency_ms": { "p50": 39.15, "p95": 46.14, "mean": 33.91 },
+    "notes": "24 张扫描件路由到 VLM 路径；离线 FakeLLM 下未跑 VLM 抽取，故计为失败，不是版式抽取精度"
+  },
+  "m1": {
+    "cases": 120,
+    "verdict_accuracy": 1.0,
+    "findings_exact_accuracy": 1.0,
+    "finding_micro_f1": 1.0,
+    "finding_tp_fp_fn": [112, 0, 0],
+    "retrieval_top1_accuracy": 1.0,
+    "retrieval_samples": 105,
+    "patch_cases": 60,
+    "patch_total": 120,
+    "elapsed_ms": 1567.34,
+    "notes": "规则 DSL + 词法/结构化 RRF 检索；gold 与数据工厂同源，指标是规则实现与 gold 契约的一致性；向量 leg 待接入"
+  },
+  "m2": {
+    "suppliers": 30,
+    "gate_recall": 1.0,
+    "gate_expected": 9,
+    "gate_extra_hits": 0,
+    "gate_false_positive_rate": 0.0,
+    "cold_start_consistency": 1.0,
+    "cold_start_n": 12,
+    "verdict_distribution": { "approve": 2, "conditional": 21, "reject": 3, "frozen": 4 },
+    "mean_flip_rate": 0.0555,
+    "elapsed_ms": 312.47,
+    "notes": "无 M2 专家标注 gold；验证注入异常契约（检出/误杀/冷启动降级）；LLM 复核者离线标记 unavailable"
+  },
+  "m3": {
+    "cases": 80,
+    "requires_gr_mix": { "true": 72, "false": 8 },
+    "scanned_docs": 12,
+    "line_alignment_f1": 1.0,
+    "greedy_line_alignment_f1": 1.0,
+    "diff_micro_f1": 1.0,
+    "diff_recall": 1.0,
+    "diff_false_positive": 0.0,
+    "diff_tp": 60,
+    "elapsed_ms": 2.1,
+    "notes": "gold 与 reconcile 同源；每组仅 1 个 PO 行，匈牙利与贪心在此数据上指标相同，匈牙利优势由冲突矩阵单测证明"
+  },
+  "engineering": {
+    "backend_unit": { "passed": 88, "skipped": 18 },
+    "backend_integration": { "passed": 17, "skipped": 1 },
+    "frontend_unit": 39,
+    "frontend_build_kb": 360.9,
+    "frontend_build_gzip_kb": 110.27,
+    "e2e_smokes": ["SMOKE_M1=OK", "SMOKE_M2=OK", "SMOKE_M3=OK", "SMOKE_E2E=OK"]
+  },
+  "pending_measurements": [
+    "字段级 F1（原生/扫描）逐字段完整评测：当前只评了发票 3 个关键字段（invoice_no/amount_tax_incl/seller_name）",
+    "VLM 扫描件抽取的字段准确率与单票成本：需真实视觉模型",
+    "真实 LLM 的成本/延迟/token：当前 FORCE_FAKE_LLM=1，cost=0",
+    "检索 recall@5 与 dense/混合消融：向量 leg 待 embedding provider（ADR-020）",
+    "M2 维度分 MAE / 结论 κ / 风险点 recall：需专家标注 gold 或 harness 评审协议",
+    "端到端 P95 与并发压测：当前 e2e 为单请求冒烟"
+  ]
+}
