@@ -2032,6 +2032,10 @@ make gen-api        # 起服务 → openapi-typescript http://localhost:8000/ope
 - **交互**：勾选 patch → 底部 sticky bar `采纳并重检（n）` / `退回补充`；`采纳并重检` 调 `resume(decision=edit)` 并原地刷新；evidence 卡片可复制引用（`POL-IT-2025-03#4.2`）。
 - **数据**：`GET /runs/{id}` + SSE；`POST /runs/{id}/resume`。
 
+> **W2 实现口径（v1.11）**：路由为 `/precheck`（页面内输入 PR 号，等价 `:prId` 极简版）；两栏布局（明细+检索候选 / findings+补丁），
+> 结论横幅带预算进度条与自动放行提示；补丁为"确认即全部采纳"（勾选/逐条编辑留到 W4 视觉阶段）。
+> 证据面板先展示规则编号 + policy 引用 + 检索候选（来源 badge：词法/精确/规格桶）；历史成交分布图待 W3 供应商模块补数据接口。
+
 #### 页面 3｜M2 供应商看板（`/supplier/:id`）
 
 - **布局**：头部主体卡（名称/统一社会信用代码/准入状态/有效期）+ **闸门条**（6 个 chip，命中红色、未检灰色、通过绿色）；主体 `2fr | 1fr`：
@@ -2491,6 +2495,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-23 | v1.8 | M3 `matching_graph`（LangGraph：load→normalize→align→reconcile→compose→interrupt→finalize）+ HITL + finalize 单事务/幂等；`invoice.remark` 列（alembic 0002，terms_conflict 判定输入）；RunService 按 module 分派图；图级集成测试 3 条（放行/挂起/RunService 全流程） | W1-M3 第 5 步实现 |
 | 2026-10-23 | v1.9 | M3 前端落地（对齐表 + 差异清单 + HITL 放行/挂起 + 服务端 PNG PDF 抽屉 + bbox 覆盖层）；M3 报告补齐 `documents/po_lines/invoice_lines` 字段；新增 `GET /documents/{id}/file`、`/page.png`；`scripts/smoke_m3.py` 端到端冒烟 | W1-M3 第 6 步 + 前端 |
 | 2026-10-23 | v1.10 | W2-M1 后端落地：规则 DSL（JSONLogic 白名单 + `required`/`fn` 算子）、混合检索（词法/精确/结构化 + RRF，向量 leg 待 embed）、`precheck_graph`（五节点 + 自动放行 + 补丁 finalize）、`scripts/m1_eval.py` 基线（verdict/findings 100%、检索 top-1 100%）、`scripts/smoke_m1.py`；数据工厂规则与 gold 对齐（17 条规则） | W2-M1 第 1~3 步实现 |
+| 2026-10-23 | v1.11 | M1 前端工作台落地（`/precheck`：结论横幅 + 预算条 + 字段/规格与检索候选 + findings + 补丁采纳 + 自动放行提示，RunCenter 跳转）；前端 32 单测、构建通过 | W2-M1 第 4 步实现 |
 
 ---
 

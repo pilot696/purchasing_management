@@ -16,6 +16,16 @@
 
 ## 留痕记录（倒序追加，最新在上）
 
+### [2026-10-23 17:40] W2-M1 第 4 步：M1 前端工作台（`/precheck`）
+- **变更文件**：新增 `frontend/src/lib/m1.ts`(+`m1.test.ts`)、重写 `frontend/src/pages/Precheck.tsx`、修改 `pages/RunCenter.tsx`（M1 卡片跳转）、`docs/PROJECT_SPEC.md`（页面 2 实现口径 + v1.11）
+- **核心实现**：
+  - 页面：PR 号启动 → SSE 节点时间线 → 结论横幅（三色 + 类别）+ **预算进度条**（可用 vs 预估，超预算红色）→ 自动放行提示（requires_review=false 时）；
+  - 左栏：申请明细（品名/规格桶/数量/规格键值）+ 检索候选（名称、桶、RRF 分数、来源 badge 词法/精确/规格桶）；
+  - 右栏：findings 卡片（类型 + 规则号 + severity + 字段 + policy 证据）、建议补丁（路径、∅→值、来源/ref）；
+  - 动作：`采纳并继续`（accept）/`退回补充`（reject），buyer/admin 角色提示；RunCenter 的 M1 卡片改为跳转 `/precheck`。
+- **验证结果**：`vitest` **32 passed**（新增 m1 6 条：报告解析、verdict/finding/patch 文案、预算条、权限、候选来源）；`tsc` 0 错；`vite build` 成功（99 modules，345KB / gzip 107KB）
+- **下一步 (Next)**：W3-M2（五维确定性评分 + 6 条硬闸门 + LLM 复核者 + 供应商看板页）
+
 ### [2026-10-23 17:35] W2-M1 第 1~3 步：规则 DSL + 混合检索 + 预检图 + M1 基线
 - **变更文件**：
   - 新增 `backend/app/rules/{engine,loader}.py`、`backend/app/retrieval/search.py`、`backend/app/agents/precheck.py`、`backend/tests/{test_rules,test_precheck_graph}.py`、`scripts/{m1_eval,smoke_m1}.py`、`evals/m1_baseline.json`

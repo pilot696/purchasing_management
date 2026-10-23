@@ -54,6 +54,10 @@ M1 预检后端（W2 第 1~3 步）已完成：规则 DSL（`app/rules/engine.py
 基线：120 条 gold 上 verdict/findings **100%**、检索 top-1 **100%**（`scripts/m1_eval.py`）；
 `scripts/smoke_m1.py` 验证真实 HTTP+SSE+HITL 全链路。
 
+M1 前端（W2 第 4 步）已完成：`/precheck` 页面输入 PR 号启动真实预检图，SSE 节点时间线 + 结论横幅（含预算进度条）
++ 字段/规格与检索候选（来源 badge：词法/精确/规格桶）+ findings 卡片 + 建议补丁（∅→值、来源、policy 证据）；
+无问题时显示"自动放行"；`采纳并继续` 会走 HITL → finalize 写回 `pr_item.spec` 并落审计。前端 32 单测、构建通过。
+
 ## 快速开始（Windows）
 
 ```powershell
