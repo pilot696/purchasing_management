@@ -86,7 +86,7 @@ LLM 复核者叙述（schema 无分数，`evidence_refs` 后置校验）。**未
 | 后端集成测试（DB） | **28 passed / 3 skipped** |
 | 前端单测 | **45 passed** |
 | 前端构建 | **390.71 KB / gzip 117.20 KB** |
-| 真实 e2e 冒烟 | `SMOKE_M1=OK` / `SMOKE_M2=OK` / `SMOKE_M3=OK` / `SMOKE_E2E=OK` |
+| 真实 e2e 冒烟 | `SMOKE_M1=OK` / `SMOKE_M2=OK` / `SMOKE_M3=OK` / `SMOKE_E2E=OK`；M3 双发票 HTTP e2e 通过（两张 invoice.status=matched） |
 | 容器 | `docker compose up -d` 一键起（API 托管前端 dist，`/healthz` 探活） |
 
 ## 7. 诚实边界（简历/面试必须主动说明）

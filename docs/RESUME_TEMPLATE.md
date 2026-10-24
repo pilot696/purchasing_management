@@ -1,4 +1,4 @@
-# 简历模板（Procurement AI Agent Workbench）
+﻿# 简历模板（Procurement AI Agent Workbench）
 
 > 这是**模板**：把 `{{姓名}}`、`{{联系方式}}`、`{{目标岗位}}` 等占位替换成你的信息即可。
 > 所有数字都来自仓库内可复现的基线（`evals/latest.json`、`docs/EVAL_REPORT.md`），**不要改大**；
@@ -77,7 +77,7 @@ Vite · Tailwind 4 · TanStack Query · Docker Compose · Playwright（截图）
 2. M1/M3 的 gold 与实现**同源**；真实精度需要在真实票据/真实 PR 上重评。
 3. 当前评测为**离线 FakeLLM**：M2 的 LLM 复核、扫描件 VLM、真实成本/延迟/缓存命中率需接入模型后回填；
    已用真实模型验证单次 M2 复核闭环（成本约 ¥0.01/次），但未跑全量。
-4. 向量检索 leg（embedding）未接；M2 无专家标注 gold（维度 MAE/κ 未测）；M3 当前单发票/run。
+4. 向量检索 leg（embedding）未接；M2 无专家标注 gold（维度 MAE/κ 未测）；M3 已支持多发票顺序核销（单次 ≤20 张，双发票 e2e 已验证）。
 5. LangGraph 使用进程内 MemorySaver，多副本需换 Postgres checkpointer（已在部署文档标注）。
 6. 人工基线 8min/组是面板估算（estimated），非实测。
 
@@ -85,3 +85,4 @@ Vite · Tailwind 4 · TanStack Query · Docker Compose · Playwright（截图）
 
 > "我做了一个间接采购的 AI Agent 工作台：三个 Agent 分别卡住申请信息不全、供应商风险和发票三单不一致；
 > 我的核心取舍是**确定性优先**——分数、闸门、verdict 都由代码算，模型只负责语义和叙述，所有结论带证据、可回放、人工可复核。"
+
