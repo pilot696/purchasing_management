@@ -102,7 +102,22 @@ async def extract_document(
     *,
     max_attempts: int = 3,
 ) -> ExtractionResult:
-    route = route_document(pdf_bytes)
+    try:
+        route = route_document(pdf_bytes)
+    except Exception as exc:  # noqa: BLE001 - 损坏/非法 PDF 不能把抽取接口打挂
+        return ExtractionResult(
+            doc_type=doc_type,
+            route=DocRoute(kind="unsupported", confidence=0.0),
+            extractor="none",
+            issues=[
+                ValidationIssue(
+                    code="ROUTE_FAILED",
+                    message=f"无法解析 PDF（{type(exc).__name__}: {exc}）",
+                    severity="high",
+                )
+            ],
+            needs_review_fields=["*"],
+        )
 
     if route.kind in {"pdf_native", "hybrid"}:
         try:

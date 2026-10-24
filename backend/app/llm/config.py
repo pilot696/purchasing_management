@@ -15,7 +15,7 @@ from typing import Any
 
 import yaml
 
-_ENV_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
+_ENV_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)(?::-([^}]*))?\}")
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -45,7 +45,8 @@ def _dotenv_values() -> dict[str, str]:
 def _expand_env(value: Any, env: dict[str, str] | None = None) -> Any:
     env = env or _dotenv_values()
     if isinstance(value, str):
-        return _ENV_PATTERN.sub(lambda m: env.get(m.group(1), ""), value)
+        # 支持 ${VAR:-default}：未配置时用默认值，避免把模型名/URL 展开成空串
+        return _ENV_PATTERN.sub(lambda m: env.get(m.group(1)) or (m.group(2) or ""), value)
     if isinstance(value, dict):
         return {k: _expand_env(v, env) for k, v in value.items()}
     if isinstance(value, list):

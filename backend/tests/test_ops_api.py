@@ -137,9 +137,16 @@ async def test_review_detail_matches_inbox_shape() -> None:
 
 async def test_document_upload_dedupes_and_links() -> None:
     await _require_data()
+    import io
     import uuid as _uuid
 
-    pdf = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n" + str(_uuid.uuid4()).encode()
+    from reportlab.pdfgen import canvas
+
+    buffer = io.BytesIO()
+    pdf_canvas = canvas.Canvas(buffer)
+    pdf_canvas.drawString(72, 720, f"test invoice {_uuid.uuid4()}")
+    pdf_canvas.save()
+    pdf = buffer.getvalue()
     async with _client() as client:
         first = await client.post(
             "/api/v1/documents/upload",

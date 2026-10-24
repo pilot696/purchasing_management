@@ -419,3 +419,15 @@
 - **根因定位**：`alignRows` 只用行号构造 key，未带发票号。
 - **修复手段**：`AlignRow` 增加 `invoiceNo`，key 改成 `match-${invoiceNo}-${poLineNo}-${invoiceLineNo}`；未匹配行按发票分组补齐。
 - **防回归**：`m3.test.ts` 增加双发票 alignRows 用例（key 唯一、两条行）。
+
+## G-052｜损坏/伪造 PDF 让抽取路由直接抛异常
+- **问题现象**：上传测试造出的伪 `%PDF` 文件进入 DB 后，`extract_eval` 在 `route_document` 处抛 `PdfminerException: No /Root object!`，整个评测中断。
+- **根因定位**：上传只校验 `%PDF` 头；抽取服务只对 native parser 包了 try/except，路由阶段（pdfplumber 打开）没有兜底。
+- **修复手段**：上传前用 pypdfium2 真正解析，失败 400 拒绝；`extract_document` 对 `route_document` 异常返回 `ROUTE_FAILED` 的失败结果；extraction eval 默认排除 `data/files/uploads/`（`--include-uploads` 可选）。
+- **防回归**：上传集成测试改用 reportlab 生成合法 PDF；离线 extract_eval 237 份文档可完整跑完。
+
+## G-053｜prompt 缓存让“真实评测”成本/延迟失真
+- **问题现象**：`m2_eval --real-llm` 首次试跑仅 96ms、cost=0，因为命中了之前真实 M2 冒烟的 prompt 缓存。
+- **根因定位**：router 默认启用 `PROMPT_CACHE_DIR`，同 prompt 直接返回缓存结果。
+- **修复手段**：`m2_eval` / `extract_eval` 增加 `--clear-cache`，真实评测前清空缓存；单供应商未缓存实测 17.5s（说明真实网络调用发生）。
+- **防回归**：真实评测文档统一要求带 `--clear-cache`；基线文件区分 `llm_mode=real-gateway`。

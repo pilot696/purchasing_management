@@ -1,5 +1,6 @@
 {
   "docs": 237,
+  "vision_mode": "offline (vlm_required)",
   "route_distribution": {
     "pdf_native": 213,
     "scanned": 24
@@ -37,36 +38,36 @@
     "seller_name": 68
   },
   "latency_ms": {
-    "p50": 39.15,
-    "p95": 46.14,
-    "mean": 33.91
+    "p50": 38.34,
+    "p95": 86.15,
+    "mean": 47.0
   },
   "failures_sample": [
     {
-      "doc_id": "168daaff-ed4e-4645-8b5d-023f77566f37",
+      "doc_id": "2b35ee23-2206-4556-bcec-057291c71a18",
       "doc_type": "contract",
       "code": "no_extract"
     },
     {
-      "doc_id": "3e9490f4-abdd-49a7-b232-32a4e25178a7",
+      "doc_id": "47c698a0-0a2e-4362-b51c-1510abd263b8",
       "doc_type": "contract",
       "code": "no_extract"
     },
     {
-      "doc_id": "56b8fbcf-34fa-4e89-bf1a-07a8306f6964",
+      "doc_id": "4ab683b3-09c5-4b26-a1b7-20b22db8b152",
       "doc_type": "contract",
       "code": "no_extract"
     },
     {
-      "doc_id": "5c5a649f-536c-4aa7-85aa-b246eaf840ae",
+      "doc_id": "541e7d70-c016-4e30-a626-ec8a2605b989",
       "doc_type": "contract",
       "code": "no_extract"
     },
     {
-      "doc_id": "7081ef49-02f1-4bd6-a8de-97ac514cd251",
+      "doc_id": "5450d0ce-6d18-40c7-a063-27f9d9bb7352",
       "doc_type": "contract",
       "code": "no_extract"
     }
   ],
-  "generated_at": "2026-10-23T15:25:11"
+  "generated_at": "2026-10-24T08:48:25"
 }

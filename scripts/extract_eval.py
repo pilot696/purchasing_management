@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import sys
@@ -34,12 +35,17 @@ def _pct(values: list[float]) -> float:
     return round(sum(values) / len(values), 4) if values else 0.0
 
 
-async def run() -> dict:
+async def run(*, vision=None, doc_limit: int | None = None, include_uploads: bool = False) -> dict:  # noqa: ANN001
     async with get_session_factory()() as session:
         docs = (await session.scalars(select(t.Doc).order_by(t.Doc.doc_type, t.Doc.id))).all()
         invoices = {row.id: row for row in (await session.scalars(select(t.Invoice))).all()}
         suppliers = {row.id: row for row in (await session.scalars(select(t.Supplier))).all()}
 
+    # 基线默认只看 seed 数据；上传文档（含测试伪 PDF）不混入，保证可复现
+    if not include_uploads:
+        docs = [doc for doc in docs if "/uploads/" not in doc.file_path.replace("\\", "/")]
+    if doc_limit:
+        docs = docs[:doc_limit]
     if not docs:
         raise SystemExit("没有文档：先运行 scripts/seed.py --seed 42")
 
@@ -54,7 +60,7 @@ async def run() -> dict:
     for doc in docs:
         pdf_bytes = (PROJECT_ROOT / doc.file_path).read_bytes()
         started = time.perf_counter()
-        result = await extract_document(pdf_bytes, doc.doc_type)  # type: ignore[arg-type]
+        result = await extract_document(pdf_bytes, doc.doc_type, vision)  # type: ignore[arg-type]
         latency_ms = (time.perf_counter() - started) * 1000
         latencies.append(latency_ms)
         route_counts[result.route.kind] = route_counts.get(result.route.kind, 0) + 1
@@ -99,6 +105,7 @@ async def run() -> dict:
     latencies_sorted = sorted(latencies)
     summary = {
         "docs": len(docs),
+        "vision_mode": "llm-vision" if vision is not None else "offline (vlm_required)",
         "route_distribution": route_counts,
         "extractor_distribution": extractor_counts,
         "scanned_needs_vlm": scanned_ok,
@@ -123,13 +130,63 @@ async def run() -> dict:
     return summary
 
 
+def _clear_prompt_cache() -> None:
+    import shutil
+
+    from app.core.config import get_settings
+
+    backend_dir = Path(__file__).resolve().parents[1] / "backend"
+    cache_dir = Path(get_settings().prompt_cache_dir)
+    if not cache_dir.is_absolute():
+        cache_dir = backend_dir / cache_dir
+    shutil.rmtree(cache_dir, ignore_errors=True)
+    print(f"[eval] cleared prompt cache: {cache_dir}")
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="抽取基线评测（默认不跑 VLM；--vision 走真实视觉模型）")
+    parser.add_argument("--vision", action="store_true", help="扫描件走真实 VLM（需配置 DASHSCOPE_API_KEY/VISION_MODEL）")
+    parser.add_argument("--limit-docs", type=int, default=None, help="只评前 N 份文档（试跑控成本）")
+    parser.add_argument("--include-uploads", action="store_true", help="把用户上传文档也纳入评测（默认只评 seed 文档）")
+    parser.add_argument("--clear-cache", action="store_true", help="评测前清空 prompt 缓存")
+    parser.add_argument("--out", type=Path, default=None, help="输出 JSON 路径")
+    args = parser.parse_args()
+
     ensure_windows_selector_loop(force=True)
-    summary = asyncio.run(run())
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    if args.clear_cache:
+        _clear_prompt_cache()
+
+    vision = None
+    if args.vision:
+        from app.llm.router import get_router
+        from app.extraction.vlm import LLMVisionExtractor
+
+        try:
+            router = get_router()
+            role = router.config.role("vision")
+            provider = router.config.providers[role.provider]
+            if not provider.base_url or not provider.api_key:
+                raise SystemExit(
+                    "VLM 未配置：请在 backend/.env 填 DASHSCOPE_BASE_URL / DASHSCOPE_API_KEY，"
+                    "并在 .env 设 VISION_MODEL（OpenAI 兼容的视觉模型名）"
+                )
+            vision = LLMVisionExtractor(router, role="vision")
+        except SystemExit:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise SystemExit(f"VLM 初始化失败（检查 DASHSCOPE_BASE_URL/API_KEY/VISION_MODEL）：{exc}") from exc
+
+    ensure_windows_selector_loop(force=True)
+    summary = asyncio.run(
+        run(vision=vision, doc_limit=args.limit_docs, include_uploads=args.include_uploads)
+    )
+    out_path = args.out or (
+        PROJECT_ROOT / "evals" / ("extraction_baseline_vision.json" if args.vision else "extraction_baseline.json")
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
-    print(f"written={OUT_PATH}")
+    print(f"written={out_path}")
     print("EXTRACT_EVAL_OK")
 
 

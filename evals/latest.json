@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-23T21:11:23",
+  "generated_at": "2026-10-24T08:53:44",
   "seed": 42,
   "llm_mode": "offline-fake-llm for full baselines; real gateway smoke validated (OpenCode Go, deepseek-v4.1-flash)",
   "extraction": {
@@ -41,9 +41,9 @@
       "seller_name": 68
     },
     "latency_ms": {
-      "p50": 39.15,
-      "p95": 46.14,
-      "mean": 33.91
+      "p50": 38.34,
+      "p95": 86.15,
+      "mean": 47.0
     },
     "notes": "扫描件路由到 VLM 路径；离线未跑 VLM，失败数不代表版式精度"
   },
@@ -112,9 +112,10 @@
       "max": 96.02
     },
     "sensitivity": {
-      "mean_flip_rate": 0.0555,
+      "mean_flip_rate": 0.0599,
       "most_sensitive": {
-        "none": 15,
+        "delivery": 1,
+        "none": 14,
         "price": 6,
         "quality": 2
       },
@@ -124,7 +125,7 @@
       "skipped_gate_hit": 7,
       "unavailable": 23
     },
-    "elapsed_ms": 312.47,
+    "elapsed_ms": 396.46,
     "notes": "无 M2 专家标注 gold；验证注入异常契约（检出/误杀/冷启动降级）"
   },
   "m3": {
@@ -211,7 +212,7 @@
       "diff_micro_f1": 1.0,
       "line_alignment_f1": 1.0
     },
-    "notes": "gold 与 reconcile 同源；每组 1 行时匈牙利与贪心指标相同；v1.15 已支持同 PO 多发票顺序核销（e2e 双发票验证）"
+    "notes": "gold 与 reconcile 同源；每组 1 行时匈牙利与贪心指标相同"
   },
   "engineering": {
     "backend_unit": {

@@ -1,4 +1,4 @@
-﻿"""文档接口：元数据、bbox 注解、触发抽取并落库（Spec §8.3 子集）。"""
+"""文档接口：元数据、bbox 注解、触发抽取并落库（Spec §8.3 子集）。"""
 
 from __future__ import annotations
 
@@ -166,18 +166,21 @@ async def upload_document(
     if existing is not None:
         return {**_doc_meta(existing), "duplicate": True}
 
-    rel = f"data/files/uploads/{sha[:2]}/{sha}.pdf"
-    target = PROJECT_ROOT / rel
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(raw)
-
-    page_count = None
+    # 入库前先确认是能被解析的 PDF；只有 %PDF 头的伪文件直接拒绝，避免脏数据进 doc 表
     try:
         import pypdfium2 as pdfium
 
         page_count = len(pdfium.PdfDocument(raw))
-    except Exception:  # noqa: BLE001 - 损坏/加密 PDF 不阻塞入库
-        page_count = None
+    except Exception as exc:  # noqa: BLE001
+        raise AppError(
+            "PDF 无法解析（文件损坏或加密）",
+            details={"error": f"{type(exc).__name__}: {exc}"},
+        ) from exc
+
+    rel = f"data/files/uploads/{sha[:2]}/{sha}.pdf"
+    target = PROJECT_ROOT / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(raw)
 
     linked_kind: str | None = None
     linked_id: UUID | None = None

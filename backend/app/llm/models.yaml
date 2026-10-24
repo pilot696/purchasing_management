@@ -37,7 +37,7 @@ roles:
   # 注意：DeepSeek/GLM 会输出 reasoning tokens，这些都计入 max_tokens；2048 会在 JSON 中途截断，故给 4096。
   reason:
     provider: deepseek
-    model: deepseek-v4.1-flash
+    model: ${REASON_MODEL:-deepseek-v4.1-flash}
     schema_mode: json_object
     temperature: 0.0
     timeout_s: 120
@@ -46,16 +46,16 @@ roles:
   # 跨厂商降级：DeepSeek 不可用时由 GLM-5.3-Flash 承接（同网关，JSON object）
   reason_small:
     provider: zhipu
-    model: glm-5.3-flash
+    model: ${REASON_SMALL_MODEL:-glm-5.3-flash}
     schema_mode: json_object
     temperature: 0.0
     timeout_s: 120
     max_tokens: 4096
     fallback: []
-  # 视觉抽取：网关的 Qwen3.8 只提供 Anthropic /messages 端点，当前 provider 不支持；保留配置待适配器
+  # 视觉抽取：需要 OpenAI 兼容的 vision 端点（DashScope compatible-mode / OpenRouter / SiliconFlow / 本地 vLLM 均可）。\n  # 配置方式：填 backend/.env 的 DASHSCOPE_BASE_URL / DASHSCOPE_API_KEY / VISION_MODEL，无需改本文件。\n  # 注意：OpenCode Go 网关的 Qwen 只提供 Anthropic /messages，不能直接走本 provider。
   vision:
     provider: dashscope
-    model: qwen3.8-max
+    model: ${VISION_MODEL:-qwen3.8-max}
     schema_mode: json_schema
     temperature: 0.0
     timeout_s: 120
@@ -63,21 +63,21 @@ roles:
     fallback: []
   vision_cheap:
     provider: dashscope
-    model: qwen3.8-flash
+    model: ${VISION_CHEAP_MODEL:-qwen3.8-flash}
     schema_mode: json_schema
     temperature: 0.0
     timeout_s: 90
     max_tokens: 4096
     fallback: []
-  # 向量检索 leg：网关无 embedding 端点，接入其他 provider 后再启用（ADR-020）
+  # 向量检索 leg：模型 role 已预留；代码侧 dense 召回/回填尚未实现（ADR-020），仅改配置不会启用。
   embed:
     provider: dashscope
-    model: text-embedding-v4
+    model: ${EMBED_MODEL:-text-embedding-v4}
     dim: 1024
     batch: 16
   rerank:
     provider: dashscope
-    model: qwen3-rerank
+    model: ${RERANK_MODEL:-qwen3-rerank}
 
 pricing_usd_per_1m:
   deepseek-v4.1-flash:
@@ -94,4 +94,3 @@ pricing_usd_per_1m:
     out: 0.47
 
 fx_usd_cny: 7.1
-

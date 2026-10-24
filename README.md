@@ -1,4 +1,4 @@
-﻿# Procurement AI Agent Workbench
+# Procurement AI Agent Workbench
 
 企业通用**间接采购**（IT 软硬件 / SaaS / 行政办公 / 市场活动与外包服务）的 AI 工作台：
 在「申请 → 询价 → 准入 → 下单 → 收货 → 结算」链路上，用三个 Agent 卡住**信息不完整**、
@@ -116,9 +116,34 @@ REASON_MODEL=deepseek-v4.1-flash
 REASON_SMALL_MODEL=glm-5.3-flash
 ```
 
-- 角色路由见 `backend/app/llm/models.yaml`：`reason`（结构化复核）→ DeepSeek V4.1 Flash，失败降级 `reason_small` → GLM-5.3-Flash；
+- 角色路由见 `backend/app/llm/models.yaml`：`reason`（结构化复核）→ DeepSeek V4.1 Flash，失败降级 `reason_small` → GLM-5.3-Flash；模型名支持 `.env` 覆盖（`${REASON_MODEL:-...}` 语法）；
 - 所有调用落 `llm_call`（tokens/成本/延迟/缓存/repair），run 结束时汇总回 `agent_run`，可观测页可查；
-- 当前网关无 embedding / OpenAI 兼容视觉端点，向量 leg 与扫描件 VLM 仍在待接清单（见评测报告）。
+- **真实模型评测**（会产生费用；先小样本试跑再全量）：
+
+```bash
+# M2：30 家全量真实复核（约 8–10 分钟，预估 ¥0.3–0.5；--clear-cache 避免命中旧缓存）
+python scripts/m2_eval.py --real-llm --clear-cache
+# 试跑 3 家、不覆盖离线基线
+python scripts/m2_eval.py --real-llm --supplier-limit 3 --clear-cache --out evals/m2_baseline_real.smoke.json
+
+# 扫描件 VLM（需先配置下面的视觉端点；先评 5 份控成本）
+python scripts/extract_eval.py --vision --limit-docs 5 --clear-cache
+```
+
+- **扫描件 VLM 配置**（OpenAI 兼容视觉端点即可，DashScope / OpenRouter / SiliconFlow / 本地 vLLM）：
+
+```bash
+# backend/.env
+DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1   # 或任意 OpenAI 兼容 base
+DASHSCOPE_API_KEY=你的视觉模型 key
+VISION_MODEL=qwen-vl-max          # 用供应商控制台里的真实模型 ID
+VISION_CHEAP_MODEL=qwen-vl-plus
+```
+
+  配好后 `extract_document` 会对扫描件走 `vision` 角色（OpenAI `image_url` data URL），失败自动重试 repair；
+  注意：当前 OpenCode Go 网关的 Qwen 只提供 Anthropic `/messages`，**不能**用上面这套 OpenAI 兼容配置；若只有该 key，需要另加 Anthropic provider 适配器（可让 Agent 实现）。
+- **向量检索 leg**：`models.yaml` 已预留 `embed` 角色，但代码侧 dense 召回/回填尚未实现；只填 `DASHSCOPE_API_KEY`/`EMBED_MODEL` 不会启用，需要额外实现（ADR-020）。
+- 离线基线：`FORCE_FAKE_LLM=1` 时所有 LLM 步骤显式 `unavailable`，不产生费用，评测数字仅覆盖确定性链路。
 
 ## 快速开始（Windows）
 

@@ -1,5 +1,6 @@
 {
   "suppliers": 30,
+  "llm_mode": "offline-fake-llm",
   "gate_detection": {
     "expected": 9,
     "recall": 1.0,
@@ -34,9 +35,10 @@
     "max": 96.02
   },
   "sensitivity": {
-    "mean_flip_rate": 0.0555,
+    "mean_flip_rate": 0.0599,
     "most_sensitive": {
-      "none": 15,
+      "delivery": 1,
+      "none": 14,
       "price": 6,
       "quality": 2
     },
@@ -46,8 +48,8 @@
     "skipped_gate_hit": 7,
     "unavailable": 23
   },
-  "elapsed_ms": 312.47,
-  "generated_at": "2026-10-23T18:43:46",
+  "elapsed_ms": 396.46,
+  "generated_at": "2026-10-24T08:45:10",
   "notes": [
     "离线基线：LLM 复核者标记 unavailable（不伪造正文），分数/闸门/敏感性均为确定性计算；",
     "数据工厂无 M2 专家标注 gold，本基线验证的是『规则契约』（注入异常是否 100% 检出、无误杀、冷启动正确降级）；",

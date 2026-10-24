@@ -338,3 +338,12 @@
   - 前端发票号支持逗号/空格分隔多张，报告头显示批次与每张金额，对齐表按发票分组、每条行可打开对应发票 PDF，差异项带发票号。
 - **验证结果**：后端全量 **119 passed / 6 skipped**（单测 91/3、集成 28/3）；前端 **45 passed + typecheck/build OK**；单发票 `SMOKE_M3=OK`（`multi_invoice=false`）；双发票 HTTP e2e `MULTI=True → succeeded → 两张 invoice.status=matched`，`match_run.invoice_ids` 两条；重复发票号入口去重测试通过。
 - **下一步 (Next)**：真实模型全量评测（需 VLM/embedding 端点或费用确认）；上传文档自动建档（Invoice/PO 行项目）联动 M3。
+
+### [2026-10-24 08:55] W4 收尾：真实评测配置化（模型名 env 覆盖 + M2/VLM 评测开关）
+- **变更文件**：`backend/app/llm/config.py`（${VAR:-default} 展开）、`backend/app/llm/models.yaml`（模型名 env 驱动）、`scripts/m2_eval.py`（--real-llm/--supplier-limit/--clear-cache/--out）、`scripts/extract_eval.py`（--vision/--limit-docs/--include-uploads/--clear-cache/--out + VLM 预检）、`backend/app/extraction/service.py`（损坏 PDF 路由异常兜底）、`backend/app/api/v1/documents.py`（上传前 pdfium 校验）、README/.env.example。
+- **验证结果**：
+  - `m2_eval.py --real-llm --supplier-limit 1 --clear-cache` 真实网关调用成功（未缓存 17.5s，llm_status=ok）；
+  - 离线 `m2_eval` / `extract_eval` 均 OK；extraction baseline 237 份（native 213 / scanned 24），上传文档默认不计入基线；
+  - 未配置视觉 key 时 `extract_eval --vision` 给出明确中文提示并退出；
+  - 全量后端 119 passed / 6 skipped，前端 45 passed（未改前端）。
+- **下一步 (Next)**：等用户提供 OpenAI 兼容 VLM 端点+key（或确认实现网关 Anthropic 适配器）；embedding dense leg 仍需代码实现。
