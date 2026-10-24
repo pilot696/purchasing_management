@@ -8,7 +8,7 @@ import {
   asM2Report,
   confidenceLabel,
   dimensionLabel,
-  formatMetricValue,
+  formatMetric,
   gateLabel,
   llmStatusLabel,
   metricLabel,
@@ -542,8 +542,13 @@ export default function Supplier() {
                         <td className="px-2 py-2 text-[11px] text-[var(--text-secondary)]">
                           {Object.entries(dimension.raw_metrics)
                             .filter(([, value]) => value !== null && value !== undefined)
-                            .map(([key, value]) => `${metricLabel(key)}=${formatMetricValue(value)}`)
+                            .map(([key, value]) => `${metricLabel(key)}=${formatMetric(key, value)}`)
                             .join(" · ")}
+                          {dimension.dimension === "price" && (
+                            <div className="mt-1 text-[10px] text-[var(--text-muted)]">
+                              价格指数 = 原始指数 × 账期资金占用折算因子；账期越长，调整后指数越低，年化利率与基准天数见左侧原始指标。
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}

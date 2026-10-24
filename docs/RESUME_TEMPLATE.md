@@ -24,7 +24,7 @@
 
 · 设计三单行级对齐（精确键/规格桶/语义）+ 匈牙利全局指派 + 五类容差与分批核销状态机（支持同 PO 多发票），
   差异检出 recall 100%（60/60，误报 0）；HITL 中断-恢复、PDF bbox 高亮与审计留痕全链路打通；
-  后端 149 个测试（142 passed / 7 skipped：单测 + DB 集成）、前端 45 单测、4 套真实 HTTP+SSE e2e 冒烟全绿。
+  后端 159 个测试（152 passed / 7 skipped：单测 + DB 集成）、前端 46 单测、4 套真实 HTTP+SSE e2e 冒烟全绿。
 
 · 自写 OpenAI 兼容模型网关（角色路由/跨厂商降级/重试/磁盘 prompt 缓存/结构化输出修复）与可观测体系：
   每次调用落 llm_call（tokens/成本/延迟/缓存）、每节点落 run_event（可回放），每条结论可追溯到规则/证据/人工决策；
@@ -71,7 +71,7 @@
 Python 3.12 · FastAPI · Pydantic v2 · SQLAlchemy 2 async · PostgreSQL 16 · pgvector · Alembic ·
 LangGraph（StateGraph / interrupt / checkpointer）· SSE 断线续传 · HITL · 规则引擎（JSONLogic 白名单）·
 混合检索 + RRF · 匈牙利指派 · PDF 解析（pdfplumber/pypdfium2）· VLM 抽取 · React 19 · TypeScript ·
-Vite · Tailwind 4 · TanStack Query · Docker Compose · Playwright（截图）· LLM 网关与成本记账 · Idempotency-Key / 限流 · 抽取建档 · 合同行三单校验 / 横向比价 / Decimal 账务 / 独立文档测试集 / 第二实现差分。
+Vite · Tailwind 4 · TanStack Query · Docker Compose · Playwright（截图）· LLM 网关与成本记账 · Idempotency-Key / 限流 · 抽取建档 · 合同行三单校验（tolerance_policy 驱动） / 横向比价 / Decimal 账务 / 独立文档测试集 / 第二实现差分 / 双人标注与 Cohen κ 工具。
 
 ## 5. 面试口径（必须主动说明，避免被追问翻车）
 
@@ -80,9 +80,10 @@ Vite · Tailwind 4 · TanStack Query · Docker Compose · Playwright（截图）
 3. 当前评测为**混合口径**：M1/M3/native 抽取用离线 FakeLLM（确定性链路）；M2 与扫描件 VLM 已跑真实全量
    （M2：23/30 LLM 复核成功、0 失败、8.7 分钟、¥0.39 估算；VLM：24/24 成功、发票 3 字段 100%、p50 35.7s、估算 ¥2.89）；
    真实成本以服务商账单为准；合同/PO 无逐字段 gold，VLM 无 bbox 高亮。
-4. 向量检索 leg（embedding）未接；M2 无专家标注 gold（维度 MAE/κ 未测）；M3 已支持多发票顺序核销（单次 ≤20 张，双发票 e2e 已验证）。
+4. 向量检索 leg（embedding）未接；M2 无专家标注 gold（维度 MAE/κ 未测）；真实票据双人标注工具已实现，但**没有真实标注结果**（不得宣称 κ 或真实票据准确率）；M3 已支持多发票顺序核销（单次 ≤20 张，双发票 e2e 已验证）。
 5. LangGraph 使用进程内 MemorySaver，多副本需换 Postgres checkpointer（已在部署文档标注）。
 6. 人工基线 8min/组是面板估算（estimated），非实测。
+7. M3 合同层阈值为工程默认（合同价 1%、合同总额 5%、交期逾期提示），已可由 `tolerance_policy` 按品类覆盖，但仍需业务/财务最终确认。
 
 ## 6. 可选：一句话电梯陈述
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.matching.contract import check_contract
+from app.matching.tolerance import TolerancePolicy
 
 
 def _fixtures() -> tuple[dict, dict, dict]:
@@ -82,3 +83,58 @@ def test_contract_checks_clean_when_within_tolerance() -> None:
         )
         == []
     )
+
+
+def test_contract_price_and_qty_thresholds_come_from_policy() -> None:
+    """默认 1% 不报的价差，可用品类策略收紧到 0.5%；数量容差也可放宽。"""
+    contract, po, invoice = _fixtures()
+    po["lines"][0].update({"qty_ordered": 6, "unit_price_tax_excl": 100.6, "promised_date": "2026-01-08"})
+    po["total_amount_tax_incl"] = 603.6
+    invoice["lines"][0]["unit_price_tax_excl"] = 100.6
+
+    default_diffs = check_contract(contract=contract, po=po, invoice=invoice, category_code="IT_HW")
+    assert not any(diff["diff_type"] == "contract_price" for diff in default_diffs)
+    # 默认数量策略容差 0：多 1 件会报
+    assert any(diff["diff_type"] == "contract_qty" for diff in default_diffs)
+
+    policies = [
+        TolerancePolicy("contract_price", abs_tol=0.0, rel_tol=0.005, action="hold", priority=10, category_code="IT_HW"),
+        TolerancePolicy("contract_qty", abs_tol=1.0, rel_tol=0.0, action="hold", priority=5, category_code="IT_HW"),
+    ]
+    strict_diffs = check_contract(
+        contract=contract,
+        po=po,
+        invoice=invoice,
+        category_code="IT_HW",
+        policies=policies,
+    )
+    price_diffs = [diff for diff in strict_diffs if diff["diff_type"] == "contract_price"]
+    assert price_diffs
+    assert all(diff["severity"] == "high" for diff in price_diffs)
+    # 品类策略把数量容差放宽到 1 件后，多 1 件不再报
+    assert not any(diff["diff_type"] == "contract_qty" for diff in strict_diffs)
+
+
+def test_contract_policy_action_controls_severity() -> None:
+    """策略 action=release_with_note 时应降为 medium，不再因合同价差异 hold。"""
+    contract, po, invoice = _fixtures()
+    policies = [
+        TolerancePolicy(
+            "contract_price",
+            abs_tol=0.0,
+            rel_tol=0.0,
+            action="release_with_note",
+            priority=10,
+            category_code="IT_HW",
+        )
+    ]
+    diffs = check_contract(
+        contract=contract,
+        po=po,
+        invoice=invoice,
+        category_code="IT_HW",
+        policies=policies,
+    )
+    price_diffs = [diff for diff in diffs if diff["diff_type"] == "contract_price"]
+    assert price_diffs
+    assert {diff["severity"] for diff in price_diffs} == {"medium"}

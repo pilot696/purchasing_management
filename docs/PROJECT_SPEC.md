@@ -1,7 +1,7 @@
 # 企业通用间接采购智能管理与风控系统 — PRD & Agent Spec
 
 > **Procurement AI Agent Workbench**｜全栈 + Multi-Agent 工程级需求与技术架构说明书
-> 版本：v1.19（独立文档测试集 / M2 第二实现差分 / 账期进入价格评分）｜日期：2026-10-24｜目标岗位：AI 应用 / Agent 开发工程师
+> 版本：v1.20（合同阈值策略化 / 真实票据双人标注工具包 / M2 账期字段展示）｜日期：2026-10-24｜目标岗位：AI 应用 / Agent 开发工程师
 > 本文档是开发与 pen.dev 画布设计的**唯一事实来源**。任何实现偏离需在 §13 变更记录中登记。
 
 ---
@@ -1615,6 +1615,18 @@ INV  : "苹果笔记本电脑 14英寸 M3芯片 16GB内存 512GB固态"
 | `date_overdue` | 7 天 | — | release_with_note | 逾期但合同未约定罚则 |
 | `terms_conflict` | — | — | hold | 付款条款冲突（LLM 定性 + 人工确认） |
 | `tail` | ¥0.05 | — | auto_clear | 尾差自动平账 |
+| `contract_price` | ¥0.01 | 1% | hold | PO/发票单价 vs 合同行单价 |
+| `contract_qty` | 0 | — | hold | PO 行数量超过合同行数量 |
+| `contract_amount` | ¥0.01 | 5% | release_with_note | PO 总额 vs 合同总额（含税口径提示） |
+| `contract_delivery` | 0 天 | — | release_with_note | 承诺交期晚于“下单日 + 合同 lead_time” |
+
+> **合同阈值策略化（v1.20）**：`matching/contract.py::check_contract(..., policies=None)` 不再硬编码 1%/5%/交期，
+> 而是把四条 `contract_*` 策略与 PO↔发票容差走同一张 `tolerance_policy` 表。解析优先级为
+> **品类专属策略 > 全局策略 > `tolerance.DEFAULT_POLICIES` 兜底**（即使 DB 尚未重灌 seed 也可运行）；
+> `action` 映射 severity：`hold→high`、`release_with_note→medium`、`note→low`、`auto_clear→info`，
+> 因此运维调动作即可决定“挂起 / 提示 / 自动放行”，不需要改代码。DB 行由 seed 的 `TOLERANCE_ROWS` 写入；
+> 已有环境重跑 `python scripts/seed.py --seed 42` 后规则库页 `GET /rules` 可见四条新策略。
+> 默认值与历史行为一致（合同价 1%、合同额 5%、任意交期逾期提示），属于“可配置化”而非口径变更。
 
 > **尾差基准（v1.7，实现口径）**：`tail = 发票价税合计 − Σ(已匹配发票行的含税金额)`，
 > 即"发票内部尾差"；行级差异（`price`/`tax_rate`/`qty_over`）已被单独判定并解释金额差时，
@@ -2546,7 +2558,8 @@ make eval SUITE=m3        # 单套件
 | 2026-10-24 | v1.16 | 真实模型全量评测：M2 真实网关 30 家（23 ok / 7 闸门跳过 / 0 失败，522s，¥0.391；max_tokens 8192 + 截断检测修复）、扫描件 VLM 24/24 成功（12 合同 + 12 发票，发票 3 字段 100%，p50 35.7s，¥2.89）；`m2_eval --real-llm` / `extract_eval --vision` 配置化；`evals/latest.json` 增加 m2_real / extraction_vision | 真实评测回填 |
 | 2026-10-24 | v1.17 | 上传建档：`POST /documents/upload` + `POST /documents/{id}/ingest`（发票 Invoice+InvoiceLine、供应商匹配、幂等/409）；Idempotency-Key（`/runs`/`/resume`/`/decision`）与演示限流；M2 评分口径增加 `mean_scored`；M3 页面一键抽取建档；测试 128 个（121 passed / 7 skipped） | 上传闭环 + 防重 |
 | 2026-10-24 | v1.18 | 审查驱动修复：M3 finalize Decimal/行锁/预算 committed；ContractLine 三单差异 + M2 横向比价 + M1 库存/历史/验收；quality/G3/除零/ambiguous/TOCTOU/红冲/词法/LLM dropped/真实发票正则；测试 139 个（132 passed / 7 skipped） | 正确性 + 需求覆盖 |
-| 2026-10-24 | v1.19 | 独立于 seed 渲染器的文档测试集（4 份/44 字段/100%，手写 gold）；M2 第二实现差分（500 组，MAE 7e-08、verdict 0 不一致）；账期资金占用进入 M2 价格指数（可配置，mean_scored 79.52）；测试 149 个（142 passed / 7 skipped） | 评测可信度 + 评分口径 |
+| 2026-10-24 | v1.19 | 独立于 seed 渲染器的文档测试集（4 份/40 字段/100%，手写 gold）；M2 第二实现差分（500 组，MAE 7e-08、verdict 0 不一致）；账期资金占用进入 M2 价格指数（可配置，mean_scored 79.52）；测试 149 个（142 passed / 7 skipped） | 评测可信度 + 评分口径 |
+| 2026-10-24 | v1.20 | 合同阈值策略化：`check_contract` 读取 `tolerance_policy` 的 `contract_price/qty/amount/delivery`，优先级品类>全局>默认，`action` 映射 severity；真实票据双人标注工具包（`app/evaluation/annotation.py` + `scripts/annotation_agreement.py` + `docs/ANNOTATION_GUIDE.md`，字段级一致率/Cohen κ，**未产生任何真实标注结果**）；M2 价格维度前端展示账期/资金占用字段；测试 159 个（152 passed / 7 skipped） | 业务规则可配置 + 人工 gold 流程 |
 
 ---
 

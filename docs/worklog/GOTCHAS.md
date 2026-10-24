@@ -483,3 +483,13 @@
 - **问题现象**：第一版 financing 因子 `(1+r*days)/(1+r*30)` 让 60 天账期价格指数变高，与“账期越长、付款现值越低”相反。
 - **修复**：改为 `(1+r*30)/(1+r*days)`（基准账期现值 / 本供应商账期现值），测试断言 60 天指数 < 1。
 - **防回归**：`tests/test_scoring.py::test_payment_days_and_financing_adjustment`。
+
+## G-064｜PowerShell 写出的 JSONL 带 BOM，标注校验直接报“不是合法 JSON”
+- **问题现象**：用 `Set-Content -Encoding utf8` 生成的 manifest/标注文件首行带 UTF-8 BOM，`json.loads` 报 `Unexpected UTF-8 BOM`，CLI 只抛 traceback，用户难以定位。
+- **修复手段**：`app/evaluation/annotation.py::read_jsonl` 改用 `encoding="utf-8-sig"`；CLI `main()` 捕获 `ValueError` 输出 `ANNOTATION_ERROR ...` 并返回 2，而不是整屏堆栈。
+- **防回归**：`tests/test_annotation_agreement.py` 覆盖合法/非法标注；CLI 冒烟用 BOM manifest 通过。
+
+## G-065｜合同阈值可配置化必须保留代码默认兜底
+- **问题现象**：只把阈值写进 `tolerance_policy`，已有 DB 未重灌 seed 时 `resolve_policy` 找不到 contract_* 行，若直接抛错或返回 0 容差，会让所有正常 PO 误报。
+- **修复手段**：`tolerance.DEFAULT_POLICIES` 继续保留四条 contract_* 默认值，`resolve_policy` 按“品类 > 全局 > 默认”回退；`check_contract` 的 `policies` 默认为空列表，因此不依赖 DB seed 也能按历史口径运行。
+- **防回归**：`tests/test_contract_check.py` 默认策略/品类覆盖/action→severity 三个用例。

@@ -31,6 +31,10 @@ TOLERANCE_ROWS: tuple[dict[str, Any], ...] = (
     {"category_code": None, "diff_type": "date_overdue", "abs_tol": 7.0, "rel_tol": 0.0, "action": "release_with_note", "priority": 40},
     {"category_code": None, "diff_type": "terms_conflict", "abs_tol": 0.0, "rel_tol": 0.0, "action": "hold", "priority": 20},
     {"category_code": None, "diff_type": "tail", "abs_tol": 0.05, "rel_tol": 0.0, "action": "auto_clear", "priority": 90},
+    {"category_code": None, "diff_type": "contract_price", "abs_tol": 0.01, "rel_tol": 0.01, "action": "hold", "priority": 10},
+    {"category_code": None, "diff_type": "contract_qty", "abs_tol": 0.0, "rel_tol": 0.0, "action": "hold", "priority": 5},
+    {"category_code": None, "diff_type": "contract_amount", "abs_tol": 0.01, "rel_tol": 0.05, "action": "release_with_note", "priority": 30},
+    {"category_code": None, "diff_type": "contract_delivery", "abs_tol": 0.0, "rel_tol": 0.0, "action": "release_with_note", "priority": 40},
 )
 
 RULE_TEMPLATES: tuple[dict[str, Any], ...] = (

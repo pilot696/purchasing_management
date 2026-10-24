@@ -4,6 +4,7 @@ import {
   asM2Report,
   confidenceLabel,
   dimensionLabel,
+  formatMetric,
   formatMetricValue,
   gateLabel,
   llmStatusLabel,
@@ -86,6 +87,18 @@ describe("展示映射", () => {
     expect(formatMetricValue(true)).toBe("是");
     expect(formatMetricValue(null)).toBe("—");
     expect(formatMetricValue(undefined)).toBe("—");
+  });
+
+  it("账期资金占用指标有中文标签和专用格式", () => {
+    expect(metricLabel("payment_days")).toContain("账期");
+    expect(metricLabel("financing_factor")).toContain("资金占用");
+    expect(metricLabel("financing_annual_rate")).toContain("年化");
+    expect(formatMetric("financing_annual_rate", 0.08)).toBe("8.0%");
+    expect(formatMetric("financing_factor", 1.0123)).toBe("1.0123×");
+    expect(formatMetric("payment_days", 45)).toBe("45 天");
+    expect(formatMetric("financing_baseline_days", 30)).toBe("30 天");
+    expect(formatMetric("price_index_raw", 1.03456)).toBe("1.035");
+    expect(formatMetric("otd", 0.62)).toBe("62.0%");
   });
 
   it("角色权限", () => {

@@ -20,9 +20,6 @@ HARD_DIFF_TYPES = frozenset(
         "qty_over",
         "terms_conflict",
         "ambiguous_match",
-        "contract_price",
-        "contract_qty",
-        "contract_amount",
     }
 )
 SUPPRESS_AMOUNT_WHEN = frozenset({"price", "tax_rate", "qty_over", "terms_conflict"})
@@ -78,6 +75,11 @@ DEFAULT_POLICIES: tuple[TolerancePolicy, ...] = (
     TolerancePolicy("terms_conflict", 0.0, 0.0, "hold", 20),
     TolerancePolicy("ambiguous_match", 0.0, 0.0, "hold", 5),
     TolerancePolicy("tail", 0.05, 0.0, "auto_clear", 90),
+    # 合同层差异：默认值与历史硬编码保持一致，可按品类覆盖
+    TolerancePolicy("contract_price", 0.01, 0.01, "hold", 10),
+    TolerancePolicy("contract_qty", 0.0, 0.0, "hold", 5),
+    TolerancePolicy("contract_amount", 0.01, 0.05, "release_with_note", 30),
+    TolerancePolicy("contract_delivery", 0.0, 0.0, "release_with_note", 40),
 )
 
 

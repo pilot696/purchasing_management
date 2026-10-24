@@ -21,6 +21,8 @@ frontend/tsconfig.tsbuildinfo
 data/files/
 data/seed/
 data/gold/
+# 真实票据标注/原始文件含企业信息，只保留模板说明，不提交数据
+data/annotation/
 
 # 工具与 IDE
 .idea/

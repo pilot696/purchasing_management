@@ -1,6 +1,6 @@
 # 评测报告（合成数据基线）
 
-> 生成日期：2026-10-23 ｜ seed=42 ｜ 运行模式：**离线 FakeLLM**（`FORCE_FAKE_LLM=1`，真实 API 未接入）
+> 生成日期：2026-10-24（v1.20） ｜ seed=42 ｜ 确定性基线离线 FakeLLM；M2/VLM 真实模型结果见 §6
 > 原始数据：[`evals/extraction_baseline.json`](evals/extraction_baseline.json)、[`evals/m1_baseline.json`](evals/m1_baseline.json)、
 > [`evals/m2_baseline.json`](evals/m2_baseline.json)、[`evals/m3_baseline.json`](evals/m3_baseline.json)、汇总 [`evals/latest.json`](evals/latest.json)
 
@@ -82,10 +82,10 @@ LLM 复核者叙述（schema 无分数，`evidence_refs` 后置校验）。**未
 
 | 项 | 结果 |
 |---|---|
-| 后端单测 | **111 passed / 3 skipped**（114 个） |
-| 后端集成测试（DB） | **31 passed / 4 skipped**（35 个） |
-| 前端单测 | **45 passed** |
-| 前端构建 | **398.09 KB / gzip 119.25 KB** |
+| 后端单测 | **121 passed / 3 skipped**（124 个） |
+| 后端集成测试（DB） | **31 passed / 4 skipped**（35 个；合计 159 个 / 152 passed / 7 skipped） |
+| 前端单测 | **46 passed** |
+| 前端构建 | **399.08 KB / gzip 119.60 KB** |
 | 真实 e2e 冒烟 | `SMOKE_M1=OK` / `SMOKE_M2=OK` / `SMOKE_M3=OK` / `SMOKE_E2E=OK`；M3 双发票 HTTP e2e 通过（两张 invoice.status=matched） |
 | 容器 | `docker compose up -d` 一键起（API 托管前端 dist，`/healthz` 探活） |
 
@@ -190,3 +190,11 @@ python scripts/smoke_m1.py && python scripts/smoke_m2.py && python scripts/smoke
 - **M2 第二实现**：`scripts/m2_reference_check.py` 用独立代码重写五维公式与 verdict 阈值，对 500 组固定 seed 随机指标做差分：`dimension_mae=7e-08`、`max_abs_delta=5e-07`、`verdict_mismatch=0`。这是实现一致性校验，**不是人工专家 gold**。
 - **M2 账期折算**：价格指数按供应商平均账期（合同 payment_terms 优先，报价回退）做资金占用折算，年化 8%、基准 30 天，`M2_FINANCING_ANNUAL_RATE` 可配为 0 关闭；离线基线 mean_scored 79.50→79.52（分数变化很小，闸门/verdict 分布不变）。
 - **可信边界**：上述两项补强了"非自证"程度，但真实质量证据仍缺：真实票据双人标注、M2 专家评分/κ、M3 合同条款业务确认。
+
+## 11. 合同阈值策略化与人工标注工具（v1.20）
+
+- **合同阈值不再硬编码**：`check_contract(..., policies=None)` 把 `contract_price/qty/amount/delivery` 四条规则交给 `tolerance_policy`，解析优先级为品类专属 > 全局 > 代码默认；`action` 映射 severity（hold→high、release_with_note→medium、note→low、auto_clear→info）。默认值与历史一致，因此本节没有产生新的评测数字。
+- **真实票据双人标注工具包**：`backend/app/evaluation/annotation.py` + `scripts/annotation_agreement.py` 提供模板导出（上传入库文档/外部 manifest）、两人 JSONL 校验、字段级一致率与 Cohen's κ、Markdown/JSON 报告；流程见 `docs/ANNOTATION_GUIDE.md`。工具会拒绝缺字段、重复 doc_id、非法金额/日期、同一标注者等输入。
+- **没有真实 κ 数字**：仓库内没有任何真实票据标注结果，本版只交付流程与代码；在两位标注者完成标注前，不得把该工具描述为"真实准确率"。seed 合成文档仍只能用于流程演练。
+- **M2 账期字段**：前端价格维度展示 `price_index_raw`、`payment_days`、`financing_factor`、年化资金成本与基准天数，便于解释"为什么账期长的报价调整后更便宜"。
+- **诚实边界**：合同策略的默认阈值仍需要业务/财务确认（5% 合同总额、1% 单价为工程默认）；标注工具的一致性不等于模型准确率，且真实数据涉及授权与脱敏。

@@ -318,7 +318,7 @@
 
 
 ### [2026-10-23 21:35] W4 收尾：HITL edits、供应商看板、上传、CI/依赖锁定（多发票未完成）
-- **变更文件**：ackend/app/agents/precheck.py、ackend/app/services/runs.py、ackend/app/schemas/{runs,catalog}.py、ackend/app/api/v1/{runs,suppliers,observability,documents}.py、ackend/alembic/env.py、 002_invoice_remark.py、rontend/src/pages/{Precheck,Supplier,Matching}.tsx、rontend/src/lib/{m1,api}.ts、.github/workflows/ci.yml、scripts/eval_report.py、ackend/requirements.txt
+- **变更文件**：backend/app/agents/precheck.py、backend/app/services/runs.py、backend/app/schemas/{runs,catalog}.py、backend/app/api/v1/{runs,suppliers,observability,documents}.py、backend/alembic/env.py、0002_invoice_remark.py、frontend/src/pages/{Precheck,Supplier,Matching}.tsx、frontend/src/lib/{m1,api}.ts、.github/workflows/ci.yml、scripts/eval_report.py、backend/requirements.txt
 - **已完成**：
   1. HITL edits 贯通：ResumeRequest.edits=None 兼容全量采纳；[] 表示不采纳；非空按 reviewer 勾选/改值应用；precheck 清洗路径/越界/整 spec 替换，审计只记录实际应用集合；M1 前端逐条勾选+改值。
   2. 供应商目录/详情/趋势：GET /suppliers、GET /suppliers/{code}；页面表格点选 + 最近 6 次评估趋势；GET /reviews/{id}；GET /metrics/overview 别名。
@@ -394,3 +394,9 @@
 - **验证**：后端 **149 个（142 passed / 7 skipped**：单测 111/3、集成 31/4）；SMOKE_M1/M2/M3/E2E=OK；横向比价 3 家返回；`evals/latest.json` 新增 extraction_independent / m2_reference。
 - **GitNexus**：本轮新增 evaluation/scoring/payment 模块，`detect-changes` 待提交前复跑。
 - **下一步 (Next)**：真实票据双人标注、M2 专家评分/κ、M3 合同阈值业务确认。
+
+### [2026-10-24 15:05] v1.20：合同阈值策略化 + 真实票据双人标注工具包 + M2 账期字段展示
+- **变更文件**：`backend/app/matching/tolerance.py`（新增 contract_* 默认策略）、`backend/app/matching/contract.py`（策略驱动 + action→severity）、`backend/app/agents/matching.py`（传入 policies）、`backend/app/seed/dataset.py`（TOLERANCE_ROWS 四条）、`backend/app/api/v1/meta.py`（diff.type 枚举）、`backend/app/evaluation/annotation.py` + `scripts/annotation_agreement.py`（模板/校验/κ）、`backend/tests/{test_contract_check,test_annotation_agreement}.py`、`frontend/src/lib/m2.ts` + `Supplier.tsx`（账期/资金占用字段）、`docs/ANNOTATION_GUIDE.md`、README/EVAL/SPEC/RESUME。
+- **验证结果**：后端全量 **159 个（152 passed / 7 skipped**：单测 121/3、集成 31/4）；前端 **46 passed** + typecheck；build **399.08KB / gzip 119.60KB**；SMOKE_M1/M2/M3/E2E=OK；CLI `template/check` 用 UTF-8 BOM manifest 冒烟通过，缺标注者时按预期非 0 退出；7 张截图按 v1.20 UI 重拍。
+- **诚实边界**：标注工具没有产生任何真实 gold/κ；合同默认阈值（1%/5%/逾期提示）仍需业务确认；不刷新真实业务指标。
+- **下一步 (Next)**：真实票据授权采样后执行双人标注；M2 专家 gold；生产化鉴权/Postgres checkpointer/P95。

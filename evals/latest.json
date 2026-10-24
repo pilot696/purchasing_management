@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-24T14:00:51",
+  "generated_at": "2026-10-24T15:00:49",
   "seed": 42,
   "llm_mode": "offline-fake-llm for full baselines; real gateway smoke validated (OpenCode Go, deepseek-v4.1-flash)",
   "extraction": {
@@ -350,16 +350,16 @@
   },
   "engineering": {
     "backend_unit": {
-      "passed": 111,
+      "passed": 121,
       "skipped": 3
     },
     "backend_integration": {
       "passed": 31,
       "skipped": 4
     },
-    "frontend_unit": 45,
-    "frontend_build_kb": 398.09,
-    "frontend_build_gzip_kb": 119.25,
+    "frontend_unit": 46,
+    "frontend_build_kb": 399.08,
+    "frontend_build_gzip_kb": 119.60,
     "screenshots": 7,
     "e2e_smokes": [
       "SMOKE_M1=OK",
@@ -369,7 +369,7 @@
       "SMOKE_E2E=OK"
     ],
     "backend_total": {
-      "passed": 142,
+      "passed": 152,
       "skipped": 7
     }
   },

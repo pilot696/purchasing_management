@@ -265,3 +265,9 @@
 - **GitNexus 影响面**：新增 `app/evaluation/*`、`app/scoring/payment.py`、`scripts/independent_extraction_eval.py`、`scripts/m2_reference_check.py`；改 `agents/supplier.py aggregate_metrics`、`extraction/pdf_native.py` 金额正则、`core/config.py`、`eval_report.py`。
 - **方案**：独立渲染器+手写 gold（40/40）、第二实现差分（MAE 7e-08/verdict 0）、账期现值折算（可配置，基准 30 天/年化 8%，mean_scored 79.52）。
 - **同步**：Spec v1.19、README/EVAL/RESUME/latest、GOTCHAS G-062/G-063。
+
+## ADR-025｜合同阈值策略化与人工标注流程（v1.20）
+- **触发**：剩余边界里“合同阈值硬编码（1%/5%/逾期天数）”需要业务可配；真实票据标注一直缺流程工具。
+- **GitNexus 影响面**：`detect-changes --scope all` → 10 files / 14 symbols / 2 processes / risk=medium（untracked 标注脚本未入索引）；`impact "check_contract"` 返回 UNKNOWN（索引未含该函数），已用文本检索确认调用方仅 `agents/matching.py` 与 `tests/test_contract_check.py`，并以 4 个合同单测 + M3 全量测试覆盖。
+- **方案**：`check_contract(..., policies=None)` 读取 `tolerance_policy` 的 contract_price/qty/amount/delivery，优先级品类 > 全局 > `DEFAULT_POLICIES`；action 映射 severity；新增 `app/evaluation/annotation.py` 与 `scripts/annotation_agreement.py`（模板、校验、字段级一致率、Cohen κ），流程文档 `docs/ANNOTATION_GUIDE.md`；M2 前端展示账期/资金占用字段。
+- **同步**：Spec v1.20 §7.5 + changelog；EVAL §11；README/RESUME 数字；GOTCHAS G-064/G-065。

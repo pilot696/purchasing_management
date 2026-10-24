@@ -4,16 +4,16 @@
 在「申请 → 询价 → 准入 → 下单 → 收货 → 结算」链路上，用三个 Agent 卡住**信息不完整**、
 **供应商风险**、**三单不一致**三个漏损点，并保留人工复核（HITL）兜底。
 
-- 业务与架构唯一事实来源：**[docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md)**（v1.14）
+- 业务与架构唯一事实来源：**[docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md)**（v1.20）
 - 开发留痕：[PROGRESS](docs/worklog/PROGRESS.md) · [IMPACT_AND_DECISIONS](docs/worklog/IMPACT_AND_DECISIONS.md) · [GOTCHAS](docs/worklog/GOTCHAS.md)
-- 评测报告：[EVAL_REPORT.md](docs/EVAL_REPORT.md)（合成数据基线 + 诚实边界）· 部署：[DEPLOYMENT.md](docs/DEPLOYMENT.md) · 设计稿：[design/README.md](design/README.md) · 简历模板：[RESUME_TEMPLATE.md](docs/RESUME_TEMPLATE.md)
+- 评测报告：[EVAL_REPORT.md](docs/EVAL_REPORT.md)（合成数据基线 + 真实模型结果 + 诚实边界）· 标注流程：[ANNOTATION_GUIDE.md](docs/ANNOTATION_GUIDE.md) · 部署：[DEPLOYMENT.md](docs/DEPLOYMENT.md) · 设计稿：[design/README.md](design/README.md) · 简历模板：[RESUME_TEMPLATE.md](docs/RESUME_TEMPLATE.md)
 - 截图：[docs/screens/](docs/screens/)（Playwright 实拍：Run 中心 / M1 / M2 / M3 / 规则库 / 可观测 / 设计稿）
 
 ## 当前状态：W4 演示闭环（6 页全部可用 + 真实模型已验证 + 截图资产）
 
 **已验证**（2026-10-24，seed=42；确定性基线离线，M2 另跑真实网关全量）：
 
-- 后端测试 **149 个（142 passed / 7 skipped**：单测 111/3、DB 集成 31/4）；前端单测 **45 passed**；`tsc` + `vite build` 通过（398.09KB / gzip 119.25KB）。
+- 后端测试 **159 个（152 passed / 7 skipped**：单测 121/3、DB 集成 31/4）；前端单测 **46 passed**；`tsc` + `vite build` 通过（399.08KB / gzip 119.60KB）。
 - 真实 e2e 冒烟全绿：`SMOKE_M1=OK`（needs_info + 补丁写回）、`SMOKE_M2=OK`（SUP-001 approve 94.43）、
   `SMOKE_M3=OK`（overall=hold + PDF 注释 + 财务放行）、`SMOKE_E2E=OK`（SSE/中断/恢复契约）。
 - **真实模型已接**：OpenCode Go（OpenAI 兼容）跑通 M2 LLM 复核闭环（deepseek-v4.1-flash，单次 tokens 1658→2662、
@@ -30,6 +30,8 @@
 - **独立文档测试集（v1.19）**：`backend/app/evaluation/independent_docs.py` + `scripts/independent_extraction_eval.py`：独立于 seed 渲染器的 4 份文档（20 位发票号、全角括号/￥/小写、PO、合同），手写 gold 字段级 **100%（40/40）**；PDF 原生解析补了 ￥/全角变体。**仍是合成 PDF，不是真实票据人工标注**。
 - **M2 第二实现差分（v1.19）**：`app/evaluation/m2_reference.py` 用独立代码重写五维公式/阈值，500 组随机指标 **MAE 7e-08、verdict 不一致 0**；这证明实现一致，不是专家 gold。
 - **审查驱动的正确性修复（v1.18）**：M3 finalize 核销/尾差池改全程 Decimal；M1/M2/M3 finalize 加 run 行锁（并发 resume 串行、审计查重原子）；M1 放行同事务写回预算 `amount_committed`（行锁）；合同行接入 M3（`contract_price/qty/amount/delivery`）；M2 新增同一 PR 多供应商横向比价 + 账期资金占用进入价格评分（`M2_FINANCING_ANNUAL_RATE` 可配）；M1 增加库存/历史采购/验收条款展示；并修复 quality_score 冗余公式、G3 重复闸门、规则除零、L3 ambiguous 自动核销、上传/建档并发 500、红冲负数、词法噪声、LLM 证据丢弃不可见、真实发票号/金额正则等。
+- **法律/财务规则可配置（v1.20）**：M3 合同层四条校验（合同价/数量/总额/交期）从硬编码改为 `tolerance_policy` 驱动，支持“品类专属 > 全局 > 默认”覆盖；`action` 决定 hold/提示/自动放行，默认值与历史一致（合同价 1%、合同额 5%、交期逾期提示）。
+- **真实票据双人标注工具包（v1.20）**：`scripts/annotation_agreement.py` 支持上传文档/外部 manifest 生成标注模板、两份 JSONL 校验、字段级一致率与 Cohen's κ、Markdown/JSON 报告；流程与数据安全见 [ANNOTATION_GUIDE.md](docs/ANNOTATION_GUIDE.md)。**仓库内没有真实标注结果，不编造 κ 数字**；seed 合成数据只能演练流程。
 - 上传建档：M3 上传 PDF 后可一键 `POST /documents/{id}/ingest` → 抽取并创建 Invoice + InvoiceLine（供应商匹配、金额/行归一化、sha256 去重、发票号冲突 409），随后按发票号进入 M3 匹配。
 - 幂等/限流：`POST /runs`、`/runs/{id}/resume`、`/reviews/{id}/decision` 支持 `Idempotency-Key`（进程内 24h TTL，单副本）；演示限流默认 10 次/分钟/角色。
 - 部署资产：多阶段 `Dockerfile`（Node 构建前端 → Python 运行时同端口托管 SPA + API）、`docker compose up -d --build`
@@ -39,7 +41,7 @@
 - 简历数字：Spec §12 占位符已按实测回填；[RESUME_TEMPLATE.md](docs/RESUME_TEMPLATE.md) 提供匿名模板 + STAR 口径。
 
 **仍未测/待接入**（不写进数字）：向量检索 leg（dense 代码未实现，ADR-020）、M2 专家标注 gold（维度 MAE/κ）、
-真实票据人工标注测试集（已有独立渲染器+手写 gold 的合成回归集，仍不能替代真实票据/双人标注）、
+真实票据人工标注 gold（**已交付双人标注工具包与流程，但仓库内没有真实标注结果**；独立渲染器+手写 gold 的合成回归集仍不能替代真实票据）、
 M1/M3 真实模型基线（这两套本身确定性）、端到端 P95 压测；扫描件 VLM 已测（见上），但合同/PO 只有"成功抽取"、
 没有逐字段 gold，且 VLM 未输出 bbox（扫描件 PDF 暂无高亮）；幂等/限流为进程内实现（生产需 Redis/网关级）。
 全部记录在 [EVAL_REPORT.md §7](docs/EVAL_REPORT.md)。
@@ -201,14 +203,15 @@ docker compose exec api python scripts/seed.py --seed 42  # 首次初始化演�
 backend/            FastAPI + SQLAlchemy + Alembic + LLM 网关 + 事件总线 + 三个 LangGraph Agent
 frontend/           React 19 + Vite + Tailwind（6 页工作台 + SSE 流式 UI）
 design/             pen.dev 设计稿（design.pen / tokens.json / preview.html）+ 与 tokens.css 同源说明
-docs/PROJECT_SPEC.md      PRD & Agent Spec（唯一的业务/架构事实来源，v1.14）
+docs/PROJECT_SPEC.md      PRD & Agent Spec（唯一的业务/架构事实来源，v1.20）
 docs/EVAL_REPORT.md       评测报告（四套基线 + 真实模型验证 + 诚实边界 + 复现命令）
+docs/ANNOTATION_GUIDE.md  真实票据双人标注流程（模板/校验/Cohen κ/裁决 + 隐私边界）
 docs/DEPLOYMENT.md        部署说明（compose / 本机生产形态 / 生产限制）
 docs/RESUME_TEMPLATE.md   简历模板（匿名占位 + STAR 数字 + 面试口径）
 docs/screens/             7 张实拍截图（Run 中心/M1/M2/M3/规则/可观测/设计稿）
 docs/worklog/       三份开发留痕（PROGRESS / IMPACT_AND_DECISIONS / GOTCHAS）
 evals/              基线 JSON（extraction/m1/m2/m3 + latest 汇总 + real_llm_smoke）
-scripts/            seed、四套 eval、eval_report（聚合 latest.json）、四套 e2e smoke、demo_runs、screenshots、设计稿生成、dev.ps1
+scripts/            seed、四套 eval、annotation_agreement、eval_report（聚合 latest.json）、四套 e2e smoke、demo_runs、screenshots、设计稿生成、dev.ps1
 Dockerfile          多阶段镜像（Node 构建前端 → Python 运行时同端口托管）
 docker-compose.yml  PostgreSQL 16 + pgvector + api（迁移自动执行 + healthcheck）
 Makefile            CI/Linux 入口（up-app / seed-docker / eval / design 等）

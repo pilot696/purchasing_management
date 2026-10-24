@@ -476,8 +476,15 @@ def reconcile_document(state: MatchingState, deps: MatchingDeps) -> dict[str, An
     # 三单补齐：合同行 vs PO/发票（避免每个 invoice 重复跑 PO 检查）
     contract = state.get("contract")
     contract_diffs: list[dict[str, Any]] = []
+    contract_policies = policies_from_rows(state.get("policies", []))
     if contract and contract.get("lines"):
-        po_only = check_contract(contract=contract, po=po, invoice=None, category_code=state.get("category_code"))
+        po_only = check_contract(
+            contract=contract,
+            po=po,
+            invoice=None,
+            category_code=state.get("category_code"),
+            policies=contract_policies,
+        )
         first = invoices[0] if invoices else None
         for diff in po_only:
             contract_diffs.append(
@@ -493,6 +500,7 @@ def reconcile_document(state: MatchingState, deps: MatchingDeps) -> dict[str, An
                 po={"lines": [], "total_amount_tax_incl": 0},
                 invoice=invoice,
                 category_code=state.get("category_code"),
+                policies=contract_policies,
             )
             for diff in invoice_only:
                 contract_diffs.append({**diff, "invoice_no": invoice["invoice_no"], "invoice_id": invoice["invoice_id"]})

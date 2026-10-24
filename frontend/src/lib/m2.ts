@@ -86,7 +86,12 @@ export const GATE_LABELS: Record<string, string> = {
 };
 
 export const METRIC_LABELS: Record<string, string> = {
-  price_index: "价格指数（报价/p50）",
+  price_index: "价格指数（账期调整后）",
+  price_index_raw: "原始价格指数（报价/p50）",
+  payment_days: "平均账期(天)",
+  financing_factor: "账期资金占用折算因子",
+  financing_annual_rate: "资金占用年化利率",
+  financing_baseline_days: "账期折算基准天数",
   p50_reference: "参考 p50",
   otd: "准时交付率",
   avg_delay_days: "平均延迟天数",
@@ -218,6 +223,27 @@ export function formatMetricValue(value: number | boolean | null | undefined): s
   if (value === null || value === undefined) return "—";
   if (typeof value === "boolean") return value ? "是" : "否";
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+/** 指标级格式化：百分比/天数/折算因子不能一律按普通数字展示。 */
+export function formatMetric(key: string, value: number | boolean | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  if (key === "financing_annual_rate" && typeof value === "number") {
+    return `${(value * 100).toFixed(1)}%`;
+  }
+  if (key === "financing_factor" && typeof value === "number") {
+    return `${value.toFixed(4)}×`;
+  }
+  if ((key === "payment_days" || key === "financing_baseline_days") && typeof value === "number") {
+    return `${formatMetricValue(value)} 天`;
+  }
+  if (key === "price_index" || key === "price_index_raw" || key === "p50_reference") {
+    return typeof value === "number" ? value.toFixed(3) : formatMetricValue(value);
+  }
+  if (key === "otd" || key === "qc_pass_rate" || key === "partial_ship_rate" || key === "defect_rate") {
+    return typeof value === "number" ? `${(value * 100).toFixed(1)}%` : formatMetricValue(value);
+  }
+  return formatMetricValue(value);
 }
 
 export function metricLabel(key: string): string {

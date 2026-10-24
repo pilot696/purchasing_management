@@ -3,16 +3,32 @@
 设计取舍：
 - 不把合同校验塞进 reconcile() 的行对齐主流程（那里处理 PO↔Invoice 容差）；
 - 在 M3 reconcile 聚合后追加 contract_* 差异，命中即升级 overall；
-- 合同行按 spec_bucket 优先、品名精确匹配兜底。
+- 合同行按 spec_bucket 优先、品名精确匹配兜底；
+- 阈值全部走 tolerance_policy（默认策略在 tolerance.DEFAULT_POLICIES，可按品类覆盖），
+  不再在代码里硬编码 1%/5%/交期天数。
 """
 
 from __future__ import annotations
 
 from datetime import date, datetime
-from decimal import Decimal
 from typing import Any
 
 from app.matching.normalize import normalize
+from app.matching.tolerance import TolerancePolicy, resolve_policy, within_tolerance
+
+# 策略动作 → 差异严重度；hold 会升级 overall，release_with_note 只提示
+ACTION_SEVERITY = {
+    "hold": "high",
+    "release_with_note": "medium",
+    "note": "low",
+    "auto_clear": "info",
+}
+RULE_REFS = {
+    "contract_price": "TOL-CONTRACT-01",
+    "contract_qty": "TOL-CONTRACT-02",
+    "contract_amount": "TOL-CONTRACT-03",
+    "contract_delivery": "TOL-CONTRACT-04",
+}
 
 
 def _f(value: Any, default: float = 0.0) -> float:
@@ -35,8 +51,12 @@ def _as_date(value: Any) -> date | None:
     return None
 
 
-def _within(delta: float, expected: float, rel: float = 0.01, abs_tol: float = 0.01) -> bool:
-    return abs(delta) <= max(abs_tol, abs(expected) * rel)
+def _policy(policies: list[TolerancePolicy], diff_type: str, category_code: str | None) -> TolerancePolicy:
+    return resolve_policy(diff_type, category_code, policies)
+
+
+def _severity(policy: TolerancePolicy) -> str:
+    return ACTION_SEVERITY.get(policy.action, "medium")
 
 
 def _contract_index(contract: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
@@ -78,10 +98,15 @@ def check_contract(
     po: dict[str, Any],
     invoice: dict[str, Any] | None = None,
     category_code: str | None = None,
+    policies: list[TolerancePolicy] | None = None,
 ) -> list[dict[str, Any]]:
-    """返回合同层差异；无合同/无合同行时返回空列表（由调用方保留 contract_absent 提示）。"""
+    """返回合同层差异；无合同/无合同行时返回空列表（由调用方保留 contract_absent 提示）。
+
+    阈值来源优先级：品类专属策略 > 全局策略 > tolerance.DEFAULT_POLICIES。
+    """
     if not contract or not contract.get("lines"):
         return []
+    active_policies = list(policies or [])
     diffs: list[dict[str, Any]] = []
     by_bucket, lines = _contract_index(contract)
 
@@ -98,17 +123,18 @@ def check_contract(
         expected = _f(match.get("unit_price_tax_excl"))
         actual = _f(po_line.get("unit_price_tax_excl"))
         delta = round(actual - expected, 4)
-        if not _within(delta, expected):
+        price_policy = _policy(active_policies, "contract_price", category_code)
+        if not within_tolerance(delta, expected, price_policy):
             diffs.append(
                 {
                     "po_line_no": po_line.get("line_no"),
                     "invoice_line_no": None,
                     "diff_type": "contract_price",
-                    "severity": "high",
+                    "severity": _severity(price_policy),
                     "expected": round(expected, 4),
                     "actual": round(actual, 4),
                     "delta": delta,
-                    "rule_ref": "TOL-CONTRACT-01",
+                    "rule_ref": RULE_REFS["contract_price"],
                     "suggestion": "PO 单价与合同价不一致：补签变更/价格确认后再放行",
                     "detail": f"合同价 ¥{expected:.4f}，PO 价 ¥{actual:.4f}",
                 }
@@ -116,17 +142,19 @@ def check_contract(
 
         contract_qty = _f(match.get("qty"))
         po_qty = _f(po_line.get("qty_ordered"))
-        if contract_qty > 0 and po_qty > contract_qty + 1e-9:
+        delta_qty = round(po_qty - contract_qty, 4)
+        qty_policy = _policy(active_policies, "contract_qty", category_code)
+        if contract_qty > 0 and delta_qty > 0 and not within_tolerance(delta_qty, contract_qty, qty_policy):
             diffs.append(
                 {
                     "po_line_no": po_line.get("line_no"),
                     "invoice_line_no": None,
                     "diff_type": "contract_qty",
-                    "severity": "high",
+                    "severity": _severity(qty_policy),
                     "expected": round(contract_qty, 4),
                     "actual": round(po_qty, 4),
-                    "delta": round(po_qty - contract_qty, 4),
-                    "rule_ref": "TOL-CONTRACT-02",
+                    "delta": delta_qty,
+                    "rule_ref": RULE_REFS["contract_qty"],
                     "suggestion": "PO 数量超过合同数量：需补签采购变更",
                     "detail": f"合同数量 {contract_qty}，PO 数量 {po_qty}",
                 }
@@ -136,19 +164,19 @@ def check_contract(
     contract_total = _f(contract.get("total_amount"))
     po_total = _f(po.get("total_amount_tax_incl"))
     if contract_total > 0 and po_total > 0:
-        # 合同金额含税/未税口径可能不同，这里只做存在合同行时的软校验（相对差 >5% 才报）
         delta = round(po_total - contract_total, 4)
-        if abs(delta) > max(0.01, abs(contract_total) * 0.05):
+        amount_policy = _policy(active_policies, "contract_amount", category_code)
+        if not within_tolerance(delta, contract_total, amount_policy):
             diffs.append(
                 {
                     "po_line_no": None,
                     "invoice_line_no": None,
                     "diff_type": "contract_amount",
-                    "severity": "medium",
+                    "severity": _severity(amount_policy),
                     "expected": round(contract_total, 4),
                     "actual": round(po_total, 4),
                     "delta": delta,
-                    "rule_ref": "TOL-CONTRACT-03",
+                    "rule_ref": RULE_REFS["contract_amount"],
                     "suggestion": "PO 总额与合同总额偏差较大，请确认是否含税口径或合同变更",
                     "detail": f"合同总额 {contract_total}，PO 总额（含税）{po_total}",
                 }
@@ -161,6 +189,7 @@ def check_contract(
     except (TypeError, ValueError):
         lead_time = None
     ordered_at = _as_date(po.get("ordered_at"))
+    delivery_policy = _policy(active_policies, "contract_delivery", category_code)
     if lead_time is not None and ordered_at is not None:
         expected_delivery = ordered_at.toordinal() + lead_time
         for po_line in po.get("lines") or []:
@@ -168,23 +197,24 @@ def check_contract(
             if promised is None:
                 continue
             overdue = promised.toordinal() - expected_delivery
-            if overdue > 0:
+            if overdue > 0 and not within_tolerance(overdue, lead_time, delivery_policy):
                 diffs.append(
                     {
                         "po_line_no": po_line.get("line_no"),
                         "invoice_line_no": None,
                         "diff_type": "contract_delivery",
-                        "severity": "medium",
+                        "severity": _severity(delivery_policy),
                         "expected": lead_time,
                         "actual": lead_time + overdue,
                         "delta": overdue,
-                        "rule_ref": "TOL-CONTRACT-04",
-                        "suggestion": "承诺交期晚于合同账期约定，需供应商确认或走变更",
+                        "rule_ref": RULE_REFS["contract_delivery"],
+                        "suggestion": "承诺交期晚于合同交期约定，需供应商确认或走变更",
                         "detail": f"合同 lead_time={lead_time} 天，订单承诺比该期限晚 {overdue} 天",
                     }
                 )
 
     if invoice is not None:
+        invoice_price_policy = _policy(active_policies, "contract_price", category_code)
         for invoice_line in invoice.get("lines") or []:
             match = _find_contract_line(
                 item_desc=invoice_line.get("item_desc"),
@@ -198,17 +228,17 @@ def check_contract(
             expected = _f(match.get("unit_price_tax_excl"))
             actual = _f(invoice_line.get("unit_price_tax_excl"))
             delta = round(actual - expected, 4)
-            if not _within(delta, expected):
+            if not within_tolerance(delta, expected, invoice_price_policy):
                 diffs.append(
                     {
                         "po_line_no": None,
                         "invoice_line_no": invoice_line.get("line_no"),
                         "diff_type": "contract_price",
-                        "severity": "high",
+                        "severity": _severity(invoice_price_policy),
                         "expected": round(expected, 4),
                         "actual": round(actual, 4),
                         "delta": delta,
-                        "rule_ref": "TOL-CONTRACT-01",
+                        "rule_ref": RULE_REFS["contract_price"],
                         "suggestion": "发票单价与合同价不一致：要求冲红重开或补充合同变更",
                         "detail": f"合同价 ¥{expected:.4f}，发票价 ¥{actual:.4f}",
                     }
