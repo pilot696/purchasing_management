@@ -431,3 +431,9 @@
 - **根因定位**：router 默认启用 `PROMPT_CACHE_DIR`，同 prompt 直接返回缓存结果。
 - **修复手段**：`m2_eval` / `extract_eval` 增加 `--clear-cache`，真实评测前清空缓存；单供应商未缓存实测 17.5s（说明真实网络调用发生）。
 - **防回归**：真实评测文档统一要求带 `--clear-cache`；基线文件区分 `llm_mode=real-gateway`。
+
+## G-054｜M2 真实复核输出被 max_tokens 截断，2/30 家降级为 unavailable
+- **问题现象**：M2 真实全量首跑 `llm_status` 有 2 家 `unavailable`，错误为 `JSONDecodeError: Expecting ',' delimiter`（约 char 970/1014），原始输出在 `"reviewer_memo": "...价格缺少` 处中断。
+- **根因定位**：reason 角色 `max_tokens=4096`，DeepSeek reasoning tokens 与正文共享额度；复杂供应商（SUP-022/SUP-025）在正文中途被截断，provider 未检查 `finish_reason=length`，JSON 解析失败后重试仍 4096。
+- **修复手段**：`models.yaml` reason/reason_small `max_tokens` 提升到 **8192**；`call_llm_review` 检查 `choices[0].finish_reason == "length"` 时抛显式 `OUTPUT_TRUNCATED`；重试提示要求更精简（top_risks≤3、conditions≤2、memo≤80）并输出完整 JSON。
+- **防回归**：cold-cache 全量重跑 30 家：**23 ok / 7 闸门跳过 / 0 失败**，SUP-022/025 定向验证均 ok；`m2_eval` 输出 `llm_failures` 明细，空数组为通过。

@@ -1,4 +1,4 @@
-﻿"""聚合四套基线为 evals/latest.json（可重复生成，不再手工编辑快照）。
+"""聚合四套基线为 evals/latest.json（可重复生成，不再手工编辑快照）。
 
 用法：
     python scripts/eval_report.py
@@ -25,6 +25,7 @@ def main() -> None:
     extraction = load("extraction_baseline.json")
     m1 = load("m1_baseline.json")
     m2 = load("m2_baseline.json")
+    m2_real = load("m2_baseline_real.json")
     m3 = load("m3_baseline.json")
     previous = load("latest.json")
 
@@ -49,6 +50,26 @@ def main() -> None:
             **pick(m2, "suppliers", "gate_detection", "verdict_distribution", "confidence_distribution", "cold_start", "dimension_completeness", "total_score", "sensitivity", "llm_status", "elapsed_ms"),
             "notes": "无 M2 专家标注 gold；验证注入异常契约（检出/误杀/冷启动降级）",
         },
+        "m2_real": {
+            **pick(
+                m2_real,
+                "suppliers",
+                "llm_mode",
+                "llm_status",
+                "llm_failures",
+                "elapsed_ms",
+                "elapsed_s",
+                "llm_cost",
+                "gate_detection",
+                "verdict_distribution",
+                "confidence_distribution",
+                "cold_start",
+                "dimension_completeness",
+                "total_score",
+                "sensitivity",
+            ),
+            "notes": "真实网关全量：23 家 LLM ok / 7 家闸门跳过 / 0 失败；金额为 23 次成功调用估算",
+        } if m2_real else {},
         "m3": {
             "cases": m3.get("dataset", {}).get("cases"),
             "dataset": m3.get("dataset"),
@@ -65,9 +86,16 @@ def main() -> None:
     print(f"  extraction docs={latest['extraction'].get('docs')}")
     print(f"  m1 cases={latest['m1'].get('cases')} verdict={latest['m1'].get('verdict_accuracy')}")
     print(f"  m2 suppliers={latest['m2'].get('suppliers')} gates={latest['m2'].get('gate_detection', {}).get('recall')}")
+    if latest.get("m2_real"):
+        print(
+            f"  m2_real ok={latest['m2_real'].get('llm_status', {}).get('ok')} "
+            f"failures={len(latest['m2_real'].get('llm_failures', []))} "
+            f"cost_cny={latest['m2_real'].get('llm_cost', {}).get('cny')}"
+        )
     print(f"  m3 cases={latest['m3'].get('cases')}")
 
 
 if __name__ == "__main__":
     main()
+
 

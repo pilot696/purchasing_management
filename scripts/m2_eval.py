@@ -101,6 +101,7 @@ async def run(*, real_llm: bool = False, supplier_limit: int | None = None) -> d
     dimension_completeness: list[int] = []
     sensitivity_most: Counter[str] = Counter()
     llm_status: Counter[str] = Counter()
+    llm_failures: list[dict[str, str]] = []
 
     async with session_factory() as session:
         suppliers = (await session.scalars(select(t.Supplier).order_by(t.Supplier.code))).all()
@@ -121,6 +122,14 @@ async def run(*, real_llm: bool = False, supplier_limit: int | None = None) -> d
             dimension_completeness.append(len(report["dimensions"]))
             status = report.get("llm_status") or "unavailable"
             llm_status[status] += 1
+            if status not in {"ok", "skipped_gate_hit"}:
+                llm_failures.append(
+                    {
+                        "supplier": supplier.code,
+                        "status": status,
+                        "error": str(report.get("llm_error") or "")[:300],
+                    }
+                )
             sensitivity = report.get("sensitivity") or {}
             if sensitivity.get("samples"):
                 flip_rates.append(float(sensitivity["flip_rate"]))
@@ -193,6 +202,7 @@ async def run(*, real_llm: bool = False, supplier_limit: int | None = None) -> d
             "samples": 300,
         },
         "llm_status": dict(sorted(llm_status.items())),
+        "llm_failures": llm_failures,
         "elapsed_ms": round(elapsed_ms, 2),
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "notes": (

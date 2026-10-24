@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-24T08:53:44",
+  "generated_at": "2026-10-24T09:43:31",
   "seed": 42,
   "llm_mode": "offline-fake-llm for full baselines; real gateway smoke validated (OpenCode Go, deepseek-v4.1-flash)",
   "extraction": {
@@ -127,6 +127,70 @@
     },
     "elapsed_ms": 396.46,
     "notes": "无 M2 专家标注 gold；验证注入异常契约（检出/误杀/冷启动降级）"
+  },
+  "m2_real": {
+    "suppliers": 30,
+    "llm_mode": "real-gateway",
+    "llm_status": {
+      "ok": 23,
+      "skipped_gate_hit": 7
+    },
+    "llm_failures": [],
+    "elapsed_ms": 522382.93,
+    "elapsed_s": 522.38,
+    "llm_cost": {
+      "cache_entries": 23,
+      "tokens_in": 35386,
+      "tokens_out": 82960,
+      "usd": 0.0551,
+      "cny": 0.391,
+      "pricing": "deepseek-v4.1-flash 0.15/0.60 USD per 1M, fx=7.1",
+      "note": "按 23 次成功调用的 prompt cache usage 汇总；不含失败/重试调用，最终以网关账单为准"
+    },
+    "gate_detection": {
+      "expected": 9,
+      "recall": 1.0,
+      "extra_hits": 0,
+      "missing": [],
+      "false_positives": [],
+      "false_positive_rate": 0.0
+    },
+    "verdict_distribution": {
+      "approve": 2,
+      "conditional": 21,
+      "frozen": 4,
+      "reject": 3
+    },
+    "confidence_distribution": {
+      "high": 2,
+      "low": 19,
+      "medium": 9
+    },
+    "cold_start": {
+      "total": 12,
+      "consistent_conditional_low": 12,
+      "consistency_rate": 1.0
+    },
+    "dimension_completeness": {
+      "mean_dimensions": 3.8333,
+      "expected": 5
+    },
+    "total_score": {
+      "mean": 60.95,
+      "min": 0.0,
+      "max": 96.02
+    },
+    "sensitivity": {
+      "mean_flip_rate": 0.0599,
+      "most_sensitive": {
+        "delivery": 1,
+        "none": 14,
+        "price": 6,
+        "quality": 2
+      },
+      "samples": 300
+    },
+    "notes": "真实网关全量：23 家 LLM ok / 7 家闸门跳过 / 0 失败；金额为 23 次成功调用估算"
   },
   "m3": {
     "cases": 80,

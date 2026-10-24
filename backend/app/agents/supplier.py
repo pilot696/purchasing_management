@@ -570,6 +570,8 @@ async def call_llm_review(
                     step="m2.llm_risk_review",
                     run_id=run_id,
                 )
+            if result.text and _output_finish_reason(result) == "length":
+                raise ValueError("OUTPUT_TRUNCATED：输出被 max_tokens 截断")
             payload = _normalize_llm_payload(_load_json_object(result.text))
             review = LlmRiskReview.model_validate(payload)
             clean, dropped = validate_llm_review(review, set(evidence_pack["ids"]))
@@ -578,9 +580,23 @@ async def call_llm_review(
             last_error = exc
             messages = [
                 *messages,
-                Message(role="user", content=f"上一次输出不符合要求：{exc}。请严格按给的 JSON Schema 只输出一个 JSON 对象。"),
+                Message(
+                    role="user",
+                    content=(
+                        f"上一次输出不符合要求：{exc}。请更精简（top_risks ≤3 条、conditions ≤2 条、"
+                        "reviewer_memo ≤80 字），严格输出一个完整合法的 JSON 对象，不要 markdown/解释。"
+                    ),
+                ),
             ]
     return None, "unavailable", f"{type(last_error).__name__}: {last_error}", 0
+
+
+def _output_finish_reason(result: Any) -> str | None:
+    try:
+        choices = (result.raw or {}).get("choices") or []
+        return str(choices[0].get("finish_reason")) if choices else None
+    except (AttributeError, IndexError, TypeError):
+        return None
 
 
 def _load_json_object(text: str) -> Any:

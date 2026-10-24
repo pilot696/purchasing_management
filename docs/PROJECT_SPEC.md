@@ -2454,9 +2454,9 @@ make eval SUITE=m3        # 单套件
 
 - **S**：LLM 应用最常见的质疑是"不可控、不可算账"。
 - **T**：让每次调用可记账、每次运行可回放、成本可归因到模块。
-- **A**：自写 OpenAI 兼容网关（路由/降级/重试/缓存/结构化 repair），每次调用落 `llm_call`，每步落 `run_event`，UI 提供 trace 与成本看板；评测缓存按 `sha256(model+prompt+schema)` 命中（**离线未测**，接入真实模型后回填命中率）。
+- **A**：自写 OpenAI 兼容网关（路由/降级/重试/缓存/结构化 repair），每次调用落 `llm_call`，每步落 `run_event`，UI 提供 trace 与成本看板；缓存按 `sha256(model+prompt+schema)` 命中（真实全量评测用 `--clear-cache` 冷跑，命中率未单独统计）。
 - **R**：离线全量基线成本 **¥0**（FakeLLM）；已接真实网关（OpenCode Go）验证 M2 复核闭环：单次调用
-  `tokens 1658 → 2662`、记账成本 **¥0.0131**（deepseek-v4.1-flash，含 reasoning tokens），同一 prompt 二次调用命中缓存 cost=0；
+  `tokens 1658 → 2662`、记账成本 **¥0.0131**（deepseek-v4.1-flash，含 reasoning tokens），同一 prompt 二次调用命中缓存 cost=0；M2 全量真实基线（30 家）**23 家 ok / 7 家闸门跳过 / 0 失败**，8.7 分钟、35,386 in / 82,960 out tokens、估算 **¥0.391**；
   `llm_call`/`run_event` 记账与回放已在 M1/M2/M3 真实 e2e 冒烟中验证。
 
 ### 12.5 简历三条 bullet（成稿模板）
@@ -2471,7 +2471,7 @@ make eval SUITE=m3        # 单套件
   后端 88 单测 + 17 集成、前端 39 单测、4 套真实 e2e 冒烟（M1/M2/M3/demo）。
 · 自写 OpenAI 兼容网关（路由/降级/重试/缓存/结构化 repair）与可观测表（run_event 回放、
   llm_call 记账、evidence 引用后置校验），每条结论可追溯到规则/证据/人工决策；
-  当前离线基线成本 ¥0（FakeLLM）；真实网关已验证单次 M2 复核约 ¥0.013（实测 tokens 1658→2662），全量成本/缓存命中率待回填。
+  确定性基线成本 ¥0（FakeLLM）；M2 真实网关已跑全量：23/30 复核成功、0 失败、8.7 分钟、估算 ¥0.391；扫描件 VLM 与 embedding 仍待接入。
 ```
 
 ### 12.6 答辩预案（面试官最可能追问的 12 问）

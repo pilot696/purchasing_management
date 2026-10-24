@@ -89,12 +89,33 @@ LLM 复核者叙述（schema 无分数，`evidence_refs` 后置校验）。**未
 | 真实 e2e 冒烟 | `SMOKE_M1=OK` / `SMOKE_M2=OK` / `SMOKE_M3=OK` / `SMOKE_E2E=OK`；M3 双发票 HTTP e2e 通过（两张 invoice.status=matched） |
 | 容器 | `docker compose up -d` 一键起（API 托管前端 dist，`/healthz` 探活） |
 
+### 6.1 M2 真实模型全量基线（2026-10-24）
+
+命令：`python scripts/m2_eval.py --real-llm --clear-cache`（deepseek-v4.1-flash，失败自动降级 glm-5.3-flash）。
+
+| 项 | 结果 |
+|---|---|
+| 供应商 | 30 |
+| LLM 状态 | **23 ok / 7 skipped_gate_hit / 0 failed**（修复 max_tokens 截断后重跑冷缓存） |
+| 耗时 | **522s（8.7min，23 次真实调用）** |
+| tokens（缓存 usage 汇总） | **35,386 in / 82,960 out** |
+| 估算成本 | **¥0.391**（DeepSeek 0.15/0.60 USD per 1M、fx=7.1；不含失败/重试，网关账单为准） |
+| 闸门检出 / 误报 | **100% / 0%**（9 个注入异常全命中） |
+| 结论分布 | approve 2 / conditional 21 / frozen 4 / reject 3 |
+| 冷启动 | 12/12 强制 conditional + low |
+| 敏感性 flip_rate | 5.99%（300×U(0.8,1.2)） |
+| 维度完整性 | 3.83/5（部分供应商缺 OTD/QC 数据） |
+
+> 口径说明：`total_score.mean=60.95` 含闸门否决的 0 分，不能当"平均质量分"；`llm_failures=[]` 但 23 家是 LLM 参与、
+> 7 家被闸门短路；M2 仍**没有专家 gold**，23 家真实复核只能证明"可调用、可解析、可引用校验、无整体降级"，
+> 不能证明风险判断准确率。
+
 ## 7. 诚实边界（简历/面试必须主动说明）
 
 1. **合成数据**：所有单据、供应商、金标均为自建工厂生成，不代表真实企业分布。
 2. **金标同源**：M3 的 diff gold 与 reconcile 规则同源、M1 的 gold 与规则引擎同源——1.0 只能证明"实现未回归"。
-3. **离线模式**：`FORCE_FAKE_LLM=1`，LLM 环节为确定性降级（M2 复核者 `unavailable`、扫描件未抽取、成本=0）；
-   真实模型接入后需重跑 `m1_eval/m2_eval/m3_eval` 与 `extract_eval`，回填成本/延迟/质量指标。
+3. **离线/真实口径分开**：确定性基线（M1/M3/抽取）仍用 `FORCE_FAKE_LLM=1` 跑；M2 已有真实全量基线（§6.1），
+   但仍是"可调用/可解析/可降级"的工程验证，不是专家质量评估；真实模型全量重跑需费用与网关可用性。
 4. **检索未接向量**：当前 RRF 由词法 + 精确 + 结构化三路组成；embedding provider 接入后再补 dense leg 与消融。
 5. **M2 缺专家 gold**：目前验证的是闸门/冷启动/敏感性契约；维度分 MAE 与 κ 需人工标注。
 6. **生产限制**：LangGraph `MemorySaver` 为进程内 checkpointer，多副本需换 Postgres saver；
@@ -114,6 +135,12 @@ python scripts/extract_eval.py
 python scripts/m1_eval.py
 python scripts/m2_eval.py
 python scripts/m3_eval.py
+
+# 2.1) M2 真实模型全量（产生费用，清缓存；写 evals/m2_baseline_real.json）
+python scripts/m2_eval.py --real-llm --clear-cache
+
+# 2.2) 扫描件 VLM（需 OpenAI 兼容视觉端点；先小样本）
+python scripts/extract_eval.py --vision --limit-docs 5 --clear-cache
 
 # 3) 单元 / 集成 / 前端
 pytest -m "not integration"

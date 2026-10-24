@@ -1,4 +1,4 @@
-# 模型网关配置（Spec §2.5 / §4.2）
+﻿# 模型网关配置（Spec §2.5 / §4.2）
 # 价格快照：2026-10-23 OpenCode Go 官方定价页（按 1M tokens，USD）；仅为工程记账口径，发布前需复核（§13 O1）
 # 角色 -> 跨厂商降级链：任何单厂商故障都不应让 Agent 无法出结论
 #
@@ -34,14 +34,14 @@ providers:
 
 roles:
   # 文本推理 / 结构化抽取（Go 端点支持 JSON object 模式；strict json_schema 由业务侧 Pydantic 校验兜底）
-  # 注意：DeepSeek/GLM 会输出 reasoning tokens，这些都计入 max_tokens；2048 会在 JSON 中途截断，故给 4096。
+  # 注意：DeepSeek/GLM 会输出 reasoning tokens，这些都计入 max_tokens；2048/4096 都出现过 JSON 中途截断，故给 8192。
   reason:
     provider: deepseek
     model: ${REASON_MODEL:-deepseek-v4.1-flash}
     schema_mode: json_object
     temperature: 0.0
     timeout_s: 120
-    max_tokens: 4096
+    max_tokens: 8192
     fallback: [reason_small]
   # 跨厂商降级：DeepSeek 不可用时由 GLM-5.3-Flash 承接（同网关，JSON object）
   reason_small:
@@ -50,7 +50,7 @@ roles:
     schema_mode: json_object
     temperature: 0.0
     timeout_s: 120
-    max_tokens: 4096
+    max_tokens: 8192
     fallback: []
   # 视觉抽取：需要 OpenAI 兼容的 vision 端点（DashScope compatible-mode / OpenRouter / SiliconFlow / 本地 vLLM 均可）。\n  # 配置方式：填 backend/.env 的 DASHSCOPE_BASE_URL / DASHSCOPE_API_KEY / VISION_MODEL，无需改本文件。\n  # 注意：OpenCode Go 网关的 Qwen 只提供 Anthropic /messages，不能直接走本 provider。
   vision:
@@ -59,7 +59,7 @@ roles:
     schema_mode: json_schema
     temperature: 0.0
     timeout_s: 120
-    max_tokens: 4096
+    max_tokens: 8192
     fallback: []
   vision_cheap:
     provider: dashscope
@@ -94,3 +94,5 @@ pricing_usd_per_1m:
     out: 0.47
 
 fx_usd_cny: 7.1
+
+

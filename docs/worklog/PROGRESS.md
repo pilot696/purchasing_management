@@ -347,3 +347,13 @@
   - 未配置视觉 key 时 `extract_eval --vision` 给出明确中文提示并退出；
   - 全量后端 119 passed / 6 skipped，前端 45 passed（未改前端）。
 - **下一步 (Next)**：等用户提供 OpenAI 兼容 VLM 端点+key（或确认实现网关 Anthropic 适配器）；embedding dense leg 仍需代码实现。
+
+### [2026-10-24 09:40] W4-M2：真实网关全量基线跑通（30 家，23 ok / 7 闸门跳过 / 0 失败）
+- **变更文件**：`backend/app/llm/models.yaml`（reason/reason_small max_tokens 4096→8192）、`backend/app/agents/supplier.py`（finish_reason=length 显式报错 + 精简重试提示）、`scripts/m2_eval.py`（llm_failures 明细、--clear-cache 已于上一提交加入）、`scripts/eval_report.py`（聚合 m2_baseline_real）、README/EVAL_REPORT/RESUME_TEMPLATE/SPEC §12。
+- **结果**：30 家供应商；LLM **23 ok / 7 skipped_gate_hit / 0 failed**；冷缓存耗时 **522.38s（8.7min）**；
+  23 次成功调用 tokens **35,386 in / 82,960 out**，按 deepseek-v4.1-flash 定价估算 **¥0.391**；
+  闸门检出 100%、误报 0%、冷启动 12/12、flip_rate 5.99%；产物 `evals/m2_baseline_real.json`，`latest.json` 新增 `m2_real`。
+- **踩坑**：首轮 2 家（SUP-022/025）因 reasoning+输出超过 4096 被截断（finish_reason=length），JSON 解析失败记为 unavailable；
+  提高 max_tokens 到 8192 + 截断显式检测/精简重试后，两家一次通过；重跑冷缓存得到干净基线。
+- **诚实边界**：23 家只证明"可调用/可解析/可引用校验/无整体降级"，不是专家质量；M2 仍无 gold（MAE/κ 未测）。
+- **下一步 (Next)**：用百炼 key 跑 `extract_eval --vision --limit-docs 5` 验证扫描件 VLM；embedding dense leg 待实现。
