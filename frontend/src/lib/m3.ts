@@ -7,6 +7,7 @@ export interface M3Diff {
   severity: "high" | "medium" | "low" | string;
   po_line_no: number | null;
   invoice_line_no: number | null;
+  invoice_no?: string | null;
   expected: number | null;
   actual: number | null;
   delta: number | null;
@@ -18,6 +19,7 @@ export interface M3Diff {
 export interface M3LineMatch {
   po_line_no: number;
   invoice_line_no: number | null;
+  invoice_no?: string | null;
   method: string;
   score: number;
   consumed_qty: number;
@@ -50,9 +52,19 @@ export interface M3InvoiceLine {
   amount_tax_incl?: number | null;
 }
 
+export interface M3Invoice {
+  invoice_no: string;
+  invoice_id?: string;
+  invoice_date?: string | null;
+  amount_tax_incl?: number | null;
+  doc_id?: string | null;
+  lines: M3InvoiceLine[];
+}
+
 export interface M3Documents {
   po?: string | null;
   invoice?: string | null;
+  invoices?: Array<string | null>;
   contract?: string | null;
 }
 
@@ -61,6 +73,9 @@ export interface M3Report {
   graph_version?: string;
   po_no: string;
   invoice_no: string;
+  invoice_nos?: string[];
+  invoices?: M3Invoice[];
+  multi_invoice?: boolean;
   overall: Overall;
   summaries?: string[];
   diffs: M3Diff[];
@@ -141,25 +156,63 @@ export function asM3Report(value: unknown): M3Report | null {
 
 export interface AlignRow {
   key: string;
+  invoiceNo: string | null;
   match: M3LineMatch | null;
   po: M3PoLine | null;
   invoice: M3InvoiceLine | null;
 }
 
-/** 对齐表行：按 line_matches 连接 PO / 发票行；未匹配发票行补在末尾。 */
+/** 发票号输入：逗号/中文逗号/空格分隔，去重保序。 */
+export function parseInvoiceNos(input: string): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const part of input.split(/[,，\s]+/)) {
+    const value = part.trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
+}
+
+/** 对齐表行：按 line_matches 连接 PO / 各发票行；未匹配发票行补在末尾。 */
 export function alignRows(report: M3Report): AlignRow[] {
   const poByNo = new Map((report.po_lines ?? []).map((line) => [line.line_no, line]));
-  const invoiceByNo = new Map((report.invoice_lines ?? []).map((line) => [line.line_no, line]));
-  const rows: AlignRow[] = report.line_matches.map((match) => ({
-    key: `match-${match.po_line_no}-${match.invoice_line_no ?? "x"}`,
-    match,
-    po: poByNo.get(match.po_line_no) ?? null,
-    invoice: match.invoice_line_no != null ? (invoiceByNo.get(match.invoice_line_no) ?? null) : null,
-  }));
-  const matchedInvoiceNos = new Set(report.line_matches.map((match) => match.invoice_line_no));
-  for (const line of report.invoice_lines ?? []) {
-    if (!matchedInvoiceNos.has(line.line_no)) {
-      rows.push({ key: `invoice-${line.line_no}`, match: null, po: null, invoice: line });
+  const invoices =
+    report.invoices && report.invoices.length > 0
+      ? report.invoices
+      : [{ invoice_no: report.invoice_no, lines: report.invoice_lines ?? [] }];
+  const invoiceLineMap = new Map<string, Map<number, M3InvoiceLine>>();
+  for (const invoice of invoices) {
+    invoiceLineMap.set(invoice.invoice_no, new Map(invoice.lines.map((line) => [line.line_no, line])));
+  }
+  const fallbackInvoice = invoices[0]?.invoice_no ?? report.invoice_no;
+  const rows: AlignRow[] = report.line_matches.map((match) => {
+    const invoiceNo = match.invoice_no ?? fallbackInvoice;
+    const invoiceLines = invoiceLineMap.get(invoiceNo);
+    return {
+      key: `match-${invoiceNo}-${match.po_line_no}-${match.invoice_line_no ?? "x"}`,
+      invoiceNo,
+      match,
+      po: poByNo.get(match.po_line_no) ?? null,
+      invoice:
+        match.invoice_line_no != null ? (invoiceLines?.get(match.invoice_line_no) ?? null) : null,
+    };
+  });
+  const matchedKeys = new Set(
+    report.line_matches.map((match) => `${match.invoice_no ?? fallbackInvoice}:${match.invoice_line_no}`),
+  );
+  for (const invoice of invoices) {
+    for (const line of invoice.lines) {
+      if (!matchedKeys.has(`${invoice.invoice_no}:${line.line_no}`)) {
+        rows.push({
+          key: `invoice-${invoice.invoice_no}-${line.line_no}`,
+          invoiceNo: invoice.invoice_no,
+          match: null,
+          po: null,
+          invoice: line,
+        });
+      }
     }
   }
   return rows;

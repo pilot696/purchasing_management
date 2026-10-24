@@ -13,7 +13,7 @@
 
 **已验证**（2026-10-23，seed=42；全量基线离线 FakeLLM，模型链路用真实网关验证）：
 
-- 后端单测 **88 passed / 22 skipped**；DB 集成测试 **19 passed / 3 skipped**；前端单测 **39 passed**；`tsc` + `vite build` 通过（381.67KB / gzip 114.45KB）。
+- 后端单测 **91 passed / 3 skipped**；DB 集成测试 **28 passed / 3 skipped**；前端单测 **45 passed**；`tsc` + `vite build` 通过（390.71KB / gzip 117.20KB）。
 - 真实 e2e 冒烟全绿：`SMOKE_M1=OK`（needs_info + 补丁写回）、`SMOKE_M2=OK`（SUP-001 approve 94.43）、
   `SMOKE_M3=OK`（overall=hold + PDF 注释 + 财务放行）、`SMOKE_E2E=OK`（SSE/中断/恢复契约）。
 - **真实模型已接**：OpenCode Go（OpenAI 兼容）跑通 M2 LLM 复核闭环（deepseek-v4.1-flash，单次 tokens 1658→2662、
@@ -85,7 +85,7 @@ W4 演示闭环（2026-10-23，最新）已完成：
 |---|---|
 | ![Run 中心](docs/screens/01-run-center.png) | ![M1 预检](docs/screens/02-m1-precheck.png) |
 
-| M2 供应商（真实 LLM 风险卡） | M3 三单匹配（差异 + PDF） |
+| M2 供应商（真实 LLM 风险卡） | M3 三单匹配（多发票分批核销 + 差异 + PDF） |
 |---|---|
 | ![M2 供应商](docs/screens/03-m2-supplier.png) | ![M3 三单](docs/screens/04-m3-matching.png) |
 
@@ -182,8 +182,4 @@ Makefile            CI/Linux 入口（up-app / seed-docker / eval / design 等�
 2. **证据可追溯**：每条 finding/risk 必须带 `evidence`，引用必须能在库中命中。
 3. **HITL 边界**：中断前只写"分析结果"，会计/业务事实只在 `finalize` 且用户决策后提交。
 4. **可观测**：每次 LLM 调用写 `llm_call`，每个节点写 `run_event`，UI 可回放。
-
-
-
-
 

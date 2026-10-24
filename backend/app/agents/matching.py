@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import copy
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -41,14 +42,17 @@ class MatchingState(TypedDict, total=False):
     invoice_ids: list[str]
     po: dict[str, Any]
     invoice: dict[str, Any]
+    invoices: list[dict[str, Any]]
     contract: dict[str, Any] | None
-    documents: dict[str, str | None]
+    documents: dict[str, Any]
     receipts: list[dict[str, Any]]
     policies: list[dict[str, Any]]
     requires_gr: bool
     category_code: str
     align: dict[str, Any]
+    aligns: list[dict[str, Any]]
     result: dict[str, Any]
+    results: list[dict[str, Any]]
     report: dict[str, Any]
     decision: str | None
     reviewer_note: str | None
@@ -84,15 +88,45 @@ def _policy_snapshot(policies: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _invoice_payload(invoice: t.Invoice, invoice_lines: list[t.InvoiceLine]) -> dict[str, Any]:
+    return {
+        "invoice_id": str(invoice.id),
+        "invoice_no": invoice.invoice_no,
+        "invoice_date": _as_date_str(invoice.invoice_date),
+        "amount_tax_excl": _as_float(invoice.amount_tax_excl),
+        "tax_amount": _as_float(invoice.tax_amount),
+        "amount_tax_incl": _as_float(invoice.amount_tax_incl),
+        "remark": invoice.remark,
+        "doc_id": str(invoice.doc_id) if invoice.doc_id else None,
+        "lines": [
+            {
+                "line_id": str(line.id),
+                "line_no": line.line_no,
+                "item_desc": line.item_desc,
+                "spec_bucket": line.spec_bucket,
+                "qty": _as_float(line.qty),
+                "unit_price_tax_excl": _as_float(line.unit_price_tax_excl),
+                "tax_rate": _as_float(line.tax_rate),
+                "amount_tax_excl": _as_float(line.amount_tax_excl),
+                "amount_tax_incl": _as_float(line.amount_tax_incl),
+            }
+            for line in invoice_lines
+        ],
+    }
+
+
 # --------------------------------------------------------------------------- 节点
 
 
 async def load_subject(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
     subject = state["subject"]
     po_no = str(subject.get("po_no") or "")
-    invoice_nos = [str(no) for no in (subject.get("invoice_nos") or [])]
+    # 去重保序：同一张发票重复提交会导致重复核销，必须在入口收敛
+    invoice_nos = list(dict.fromkeys(str(no) for no in (subject.get("invoice_nos") or []) if str(no).strip()))
     if not po_no or not invoice_nos:
         raise ValueError("M3 运行需要 subject.po_no 与 subject.invoice_nos")
+    if len(invoice_nos) > 20:
+        raise ValueError(f"单次最多 20 张发票（收到 {len(invoice_nos)} 张）")
 
     async with deps.session_factory() as session:
         po = await session.scalar(select(t.Po).where(t.Po.po_no == po_no))
@@ -103,23 +137,28 @@ async def load_subject(state: MatchingState, deps: MatchingDeps) -> dict[str, An
         ).all()
         po_line_ids = {line.id: line.line_no for line in po_lines}
 
-        invoice = await session.scalar(select(t.Invoice).where(t.Invoice.invoice_no == invoice_nos[0]))
-        if invoice is None:
-            raise ValueError(f"发票不存在：{invoice_nos[0]}")
-        invoice_lines = (
-            await session.scalars(
-                select(t.InvoiceLine).where(t.InvoiceLine.invoice_id == invoice.id).order_by(t.InvoiceLine.line_no)
-            )
-        ).all()
+        invoice_payloads: list[dict[str, Any]] = []
+        for invoice_no in invoice_nos:
+            invoice = await session.scalar(select(t.Invoice).where(t.Invoice.invoice_no == invoice_no))
+            if invoice is None:
+                raise ValueError(f"发票不存在：{invoice_no}")
+            invoice_lines = (
+                await session.scalars(
+                    select(t.InvoiceLine)
+                    .where(t.InvoiceLine.invoice_id == invoice.id)
+                    .order_by(t.InvoiceLine.line_no)
+                )
+            ).all()
+            invoice_payloads.append(_invoice_payload(invoice, list(invoice_lines)))
 
         contract = await session.get(t.Contract, po.contract_id) if po.contract_id else None
         po_doc = await session.scalar(
             select(t.Doc).where(t.Doc.linked_kind == "po", t.Doc.linked_id == po.id)
         )
-        invoice_doc_id = str(invoice.doc_id) if invoice.doc_id else None
         documents = {
             "po": str(po_doc.id) if po_doc else None,
-            "invoice": invoice_doc_id,
+            "invoice": invoice_payloads[0]["doc_id"],
+            "invoices": [payload["doc_id"] for payload in invoice_payloads],
             "contract": str(contract.doc_id) if contract is not None and contract.doc_id else None,
         }
         receipts_rows = (
@@ -235,10 +274,11 @@ async def load_subject(state: MatchingState, deps: MatchingDeps) -> dict[str, An
     return {
         "po_id": str(po.id),
         "contract_id": str(po.contract_id) if po.contract_id else None,
-        "invoice_ids": [str(invoice.id)],
+        "invoice_ids": [payload["invoice_id"] for payload in invoice_payloads],
         "documents": documents,
         "po": po_payload,
-        "invoice": invoice_payload,
+        "invoice": invoice_payloads[0],
+        "invoices": invoice_payloads,
         "contract": contract_payload,
         "receipts": receipts,
         "policies": policies,
@@ -249,19 +289,22 @@ async def load_subject(state: MatchingState, deps: MatchingDeps) -> dict[str, An
 
 def normalize_lines(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
     po = state["po"]
-    invoice = state["invoice"]
+    invoices = list(state.get("invoices") or [])
+    if not invoices and state.get("invoice"):
+        invoices = [state["invoice"]]
     category_code = state.get("category_code")
     for line in po["lines"]:
         if not line.get("spec_bucket") or line["spec_bucket"] == "unknown/unknown":
             line["spec_bucket"] = normalize(
                 line["item_desc"], category_code=category_code
             ).spec_bucket
-    for line in invoice["lines"]:
-        if not line.get("spec_bucket"):
-            line["spec_bucket"] = normalize(
-                line["item_desc"], category_code=category_code
-            ).spec_bucket
-    return {"po": po, "invoice": invoice}
+    for invoice in invoices:
+        for line in invoice["lines"]:
+            if not line.get("spec_bucket"):
+                line["spec_bucket"] = normalize(
+                    line["item_desc"], category_code=category_code
+                ).spec_bucket
+    return {"po": po, "invoices": invoices, "invoice": invoices[0]}
 
 
 def align_lines(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
@@ -273,37 +316,80 @@ def align_lines(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
         }
         for line in state["po"]["lines"]
     ]
-    invoice_lines = [
-        {
-            "line_no": line["line_no"],
-            "item_desc": line["item_desc"],
-            "spec_bucket": line.get("spec_bucket"),
-        }
-        for line in state["invoice"]["lines"]
-    ]
-    result = align_hungarian(po_lines, invoice_lines)
+    aligns: list[dict[str, Any]] = []
+    for invoice in state.get("invoices") or []:
+        invoice_lines = [
+            {
+                "line_no": line["line_no"],
+                "item_desc": line["item_desc"],
+                "spec_bucket": line.get("spec_bucket"),
+            }
+            for line in invoice["lines"]
+        ]
+        result = align_hungarian(po_lines, invoice_lines)
+        aligns.append(
+            {
+                "invoice_no": invoice["invoice_no"],
+                "invoice_id": invoice["invoice_id"],
+                "matches": [
+                    {
+                        "po_line_no": match.po_line_no,
+                        "invoice_line_no": match.invoice_line_no,
+                        "method": match.method,
+                        "score": match.score,
+                        "ambiguous": match.ambiguous,
+                    }
+                    for match in result.matches
+                ],
+                "unmatched_po": result.unmatched_po,
+                "unmatched_invoice": result.unmatched_invoice,
+            }
+        )
+    return {"aligns": aligns, "align": aligns[0]}
+
+
+def _serialize_result(result: Any) -> dict[str, Any]:
     return {
-        "align": {
-            "matches": [
-                {
-                    "po_line_no": match.po_line_no,
-                    "invoice_line_no": match.invoice_line_no,
-                    "method": match.method,
-                    "score": match.score,
-                    "ambiguous": match.ambiguous,
-                }
-                for match in result.matches
-            ],
-            "unmatched_po": result.unmatched_po,
-            "unmatched_invoice": result.unmatched_invoice,
-        }
+        "overall": result.overall,
+        "proposed_tail": result.proposed_tail,
+        "tolerance_applied": result.tolerance_applied,
+        "contract_absent": result.contract_absent,
+        "diffs": [
+            {
+                "diff_type": diff.diff_type,
+                "severity": diff.severity,
+                "po_line_no": diff.po_line_no,
+                "invoice_line_no": diff.invoice_line_no,
+                "expected": diff.expected,
+                "actual": diff.actual,
+                "delta": diff.delta,
+                "rule_ref": diff.rule_ref,
+                "suggestion": diff.suggestion,
+                "detail": diff.detail,
+            }
+            for diff in result.diffs
+        ],
+        "line_matches": [
+            {
+                "po_line_no": line.po_line_no,
+                "invoice_line_no": line.invoice_line_no,
+                "method": line.method,
+                "score": line.score,
+                "consumed_qty": line.consumed_qty,
+                "remaining_qty": line.remaining_qty,
+                "status": line.status,
+                "ambiguous": line.ambiguous,
+            }
+            for line in result.line_matches
+        ],
     }
 
 
 def reconcile_document(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
+    """多发票顺序核销：每张发票基于前序发票已占用的数量计算可开票上限，再聚合差异。"""
     po = state["po"]
-    invoice = state["invoice"]
-    align_state = state["align"]
+    invoices = list(state.get("invoices") or [])
+    aligns = list(state.get("aligns") or [])
     contracts = state.get("contract")
     if contracts is not None:
         contract_rows = {
@@ -312,68 +398,78 @@ def reconcile_document(state: MatchingState, deps: MatchingDeps) -> dict[str, An
     else:
         contract_rows = None
 
-    align_result = AlignResult(
-        matches=[LineMatch(**match) for match in align_state["matches"]],
-        unmatched_po=list(align_state["unmatched_po"]),
-        unmatched_invoice=list(align_state["unmatched_invoice"]),
-    )
-    result = reconcile(
-        po=po,
-        invoice=invoice,
-        align=align_result,
-        contract=contract_rows,
-        receipts=[dict(receipt) for receipt in state.get("receipts", [])],
-        policies=policies_from_rows(state.get("policies", [])),
-        requires_gr=bool(state.get("requires_gr", True)),
-        category_code=state.get("category_code"),
-    )
-    return {
-        "result": {
-            "overall": result.overall,
-            "proposed_tail": result.proposed_tail,
-            "tolerance_applied": result.tolerance_applied,
-            "contract_absent": result.contract_absent,
-            "diffs": [
-                {
-                    "diff_type": diff.diff_type,
-                    "severity": diff.severity,
-                    "po_line_no": diff.po_line_no,
-                    "invoice_line_no": diff.invoice_line_no,
-                    "expected": diff.expected,
-                    "actual": diff.actual,
-                    "delta": diff.delta,
-                    "rule_ref": diff.rule_ref,
-                    "suggestion": diff.suggestion,
-                    "detail": diff.detail,
-                }
-                for diff in result.diffs
-            ],
-            "line_matches": [
-                {
-                    "po_line_no": line.po_line_no,
-                    "invoice_line_no": line.invoice_line_no,
-                    "method": line.method,
-                    "score": line.score,
-                    "consumed_qty": line.consumed_qty,
-                    "remaining_qty": line.remaining_qty,
-                    "status": line.status,
-                    "ambiguous": line.ambiguous,
-                }
-                for line in result.line_matches
-            ],
-        }
+    po_work = copy.deepcopy(po)
+    results: list[dict[str, Any]] = []
+    for invoice, align_state in zip(invoices, aligns):
+        align_result = AlignResult(
+            matches=[LineMatch(**match) for match in align_state["matches"]],
+            unmatched_po=list(align_state["unmatched_po"]),
+            unmatched_invoice=list(align_state["unmatched_invoice"]),
+        )
+        result = reconcile(
+            po=po_work,
+            invoice=invoice,
+            align=align_result,
+            contract=contract_rows,
+            receipts=[dict(receipt) for receipt in state.get("receipts", [])],
+            policies=policies_from_rows(state.get("policies", [])),
+            requires_gr=bool(state.get("requires_gr", True)),
+            category_code=state.get("category_code"),
+        )
+        payload = _serialize_result(result)
+        payload["invoice_no"] = invoice["invoice_no"]
+        payload["invoice_id"] = invoice["invoice_id"]
+        results.append(payload)
+
+        # 本批内前序发票的核销数量要计入后续发票的剩余可开票额度（仅内存，finalize 才落库）
+        po_by_no = {line["line_no"]: line for line in po_work["lines"]}
+        for line in result.line_matches:
+            if line.invoice_line_no is None or not line.consumed_qty:
+                continue
+            target = po_by_no.get(line.po_line_no)
+            if target is not None:
+                target["qty_invoiced"] = float(target.get("qty_invoiced") or 0) + float(line.consumed_qty)
+
+    rank = {"pass": 0, "release_with_note": 1, "hold": 2}
+    overall = "pass"
+    for payload in results:
+        if rank.get(payload["overall"], 1) > rank.get(overall, 0):
+            overall = payload["overall"]
+
+    diffs = [
+        {**diff, "invoice_no": payload["invoice_no"], "invoice_id": payload["invoice_id"]}
+        for payload in results
+        for diff in payload["diffs"]
+    ]
+    line_matches = [
+        {**match, "invoice_no": payload["invoice_no"], "invoice_id": payload["invoice_id"]}
+        for payload in results
+        for match in payload["line_matches"]
+    ]
+    aggregate = {
+        "overall": overall,
+        "proposed_tail": sum(float(payload["proposed_tail"] or 0) for payload in results),
+        "tolerance_applied": sorted(
+            {item for payload in results for item in payload.get("tolerance_applied", [])}
+        ),
+        "contract_absent": any(bool(payload.get("contract_absent")) for payload in results),
+        "diffs": diffs,
+        "line_matches": line_matches,
     }
+    return {"results": results, "result": aggregate}
 
 
 def compose_report(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
     po = state["po"]
-    invoice = state["invoice"]
+    invoices = list(state.get("invoices") or [])
+    invoice = invoices[0]
     result = state["result"]
     proposed = [
         {
             "target": f"po_line:{line['po_line_no']}",
             "field": "qty_invoiced",
             "delta": line["consumed_qty"],
+            "invoice_no": line.get("invoice_no"),
         }
         for line in result["line_matches"]
         if line.get("invoice_line_no") is not None and line["consumed_qty"]
@@ -388,6 +484,30 @@ def compose_report(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
         "editable": False,
         "po_no": po["po_no"],
         "invoice_no": invoice["invoice_no"],
+        "invoice_nos": [payload["invoice_no"] for payload in invoices],
+        "invoices": [
+            {
+                "invoice_no": payload["invoice_no"],
+                "invoice_id": payload["invoice_id"],
+                "invoice_date": payload.get("invoice_date"),
+                "amount_tax_incl": payload.get("amount_tax_incl"),
+                "doc_id": payload.get("doc_id"),
+                "lines": [
+                    {
+                        "line_no": line["line_no"],
+                        "item_desc": line["item_desc"],
+                        "spec_bucket": line.get("spec_bucket"),
+                        "qty": line["qty"],
+                        "unit_price_tax_excl": line.get("unit_price_tax_excl"),
+                        "tax_rate": line.get("tax_rate"),
+                        "amount_tax_excl": line.get("amount_tax_excl"),
+                        "amount_tax_incl": line.get("amount_tax_incl"),
+                    }
+                    for line in payload["lines"]
+                ],
+            }
+            for payload in invoices
+        ],
         "category_code": state.get("category_code"),
         "requires_gr": state.get("requires_gr"),
         "overall": result["overall"],
@@ -399,7 +519,7 @@ def compose_report(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
         # 前端对齐表/PDF 抽屉需要的原始行数据与文档 id（Spec §9.4）
         "documents": state.get("documents") or {},
         "po_total": po.get("total_amount_tax_incl"),
-        "invoice_total": invoice.get("amount_tax_incl"),
+        "invoice_total": sum(float(payload.get("amount_tax_incl") or 0) for payload in invoices),
         "po_lines": [
             {
                 "line_no": line["line_no"],
@@ -415,6 +535,7 @@ def compose_report(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
             }
             for line in po["lines"]
         ],
+        # 兼容旧前端：第一张发票的行；多发票明细见 invoices[].lines
         "invoice_lines": [
             {
                 "line_no": line["line_no"],
@@ -429,9 +550,9 @@ def compose_report(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
             for line in invoice["lines"]
         ],
         "diff_count": len(result["diffs"]),
-        "multi_invoice": False,  # W1 限制：单张发票；W2 扩展多张（Spec §7.4）
+        "multi_invoice": len(invoices) > 1,
         "summary": (
-            f"{po['po_no']} ↔ {invoice['invoice_no']}：{result['overall']}，"
+            f"{po['po_no']} ↔ {'、'.join(payload['invoice_no'] for payload in invoices)}：{result['overall']}，"
             f"{len(result['diffs'])} 项差异、拟核销 {len(proposed)} 处"
         ),
     }
@@ -445,11 +566,14 @@ async def _finalize(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
     report = state["report"]
     result = state["result"]
     po = state["po"]
-    invoice = state["invoice"]
+    invoices = list(state.get("invoices") or [state["invoice"]])
     review_id = UUID(state["review_id"]) if state.get("review_id") else None
 
     po_lines = {line["line_no"]: line for line in po["lines"]}
-    invoice_lines = {line["line_no"]: line for line in invoice["lines"]}
+    invoice_lines_by_no: dict[str, dict[int, dict[str, Any]]] = {
+        payload["invoice_no"]: {line["line_no"]: line for line in payload["lines"]} for payload in invoices
+    }
+    default_invoice_no = invoices[0]["invoice_no"]
 
     async with deps.session_factory() as session:
         # 幂等：同一 run 的 finalize 重入不重复核销（以 match_run 审计记录为准）
@@ -481,6 +605,7 @@ async def _finalize(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
 
         for match in result["line_matches"]:
             po_line = po_lines.get(match["po_line_no"])
+            invoice_lines = invoice_lines_by_no.get(match.get("invoice_no") or default_invoice_no, {})
             invoice_line = invoice_lines.get(match["invoice_line_no"] or -1)
             if po_line is None:
                 continue
@@ -502,6 +627,7 @@ async def _finalize(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
 
         for diff in result["diffs"]:
             po_line = po_lines.get(diff.get("po_line_no") or -1)
+            invoice_lines = invoice_lines_by_no.get(diff.get("invoice_no") or default_invoice_no, {})
             invoice_line = invoice_lines.get(diff.get("invoice_line_no") or -1)
             session.add(
                 t.MatchDiff(
@@ -522,18 +648,26 @@ async def _finalize(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
             "overall": report["overall"],
             "decision": decision,
             "proposed_tail": result["proposed_tail"],
+            "invoices": [payload["invoice_no"] for payload in invoices],
         }
         if release:
+            consumed_by_po: dict[int, float] = {}
             for match in result["line_matches"]:
-                po_line = po_lines.get(match["po_line_no"])
-                if po_line is None or not match.get("invoice_line_no") or not match.get("consumed_qty"):
+                if match.get("invoice_line_no") is None or not match.get("consumed_qty"):
+                    continue
+                consumed_by_po[match["po_line_no"]] = consumed_by_po.get(
+                    match["po_line_no"], 0.0
+                ) + float(match["consumed_qty"])
+            for po_line_no, consumed in consumed_by_po.items():
+                po_line = po_lines.get(po_line_no)
+                if po_line is None or consumed <= 0:
                     continue
                 row = await session.get(t.PoLine, UUID(po_line["line_id"]))
                 if row is None:
                     continue
                 before = _as_float(row.qty_invoiced)
-                row.qty_invoiced = Decimal(str(before + float(match["consumed_qty"])))
-                audit_after[f"po_line:{match['po_line_no']}"] = {
+                row.qty_invoiced = Decimal(str(before + consumed))
+                audit_after[f"po_line:{po_line_no}"] = {
                     "qty_invoiced_before": before,
                     "qty_invoiced_after": float(row.qty_invoiced),
                 }
@@ -552,9 +686,10 @@ async def _finalize(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
                     )
                 )
 
-            invoice_row = await session.get(t.Invoice, UUID(invoice["invoice_id"]))
-            if invoice_row is not None:
-                invoice_row.status = "matched"
+            for payload in invoices:
+                invoice_row = await session.get(t.Invoice, UUID(payload["invoice_id"]))
+                if invoice_row is not None:
+                    invoice_row.status = "matched"
             if abs(result["proposed_tail"]) >= 0.005:
                 pool = await session.scalar(select(t.TailDiffPool).where(t.TailDiffPool.po_id == UUID(state["po_id"])))
                 if pool is None:
@@ -567,9 +702,10 @@ async def _finalize(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
                 else:
                     pool.amount = Decimal(str(_as_float(pool.amount) + float(result["proposed_tail"])))
         else:
-            invoice_row = await session.get(t.Invoice, UUID(invoice["invoice_id"]))
-            if invoice_row is not None:
-                invoice_row.status = "hold"
+            for payload in invoices:
+                invoice_row = await session.get(t.Invoice, UUID(payload["invoice_id"]))
+                if invoice_row is not None:
+                    invoice_row.status = "hold"
 
         session.add(
             t.AuditLog(

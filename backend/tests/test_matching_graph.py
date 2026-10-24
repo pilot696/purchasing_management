@@ -201,3 +201,95 @@ async def test_run_service_drives_m3_hitl_flow() -> None:
     assert snapshot["artifact"] is not None
     assert snapshot["artifact"]["report"]["module"] == "m3"
     assert snapshot["review"] is None
+
+
+async def test_multi_invoice_batch_reconciles_sequentially_and_finalizes_all() -> None:
+    """同一 PO 两张发票：顺序核销、聚合差异、finalize 一次写两张状态与累计 qty_invoiced。"""
+    from decimal import Decimal
+
+    await _seeded()
+    po_no, invoice_no, _ = CASE_2
+    async with get_session_factory()() as session:
+        po_row = await session.scalar(select(t.Po).where(t.Po.po_no == po_no))
+        assert po_row is not None
+        invoice = await session.scalar(select(t.Invoice).where(t.Invoice.invoice_no == invoice_no))
+        assert invoice is not None
+        invoice_lines = (
+            await session.scalars(
+                select(t.InvoiceLine).where(t.InvoiceLine.invoice_id == invoice.id).order_by(t.InvoiceLine.line_no)
+            )
+        ).all()
+        new_no = f"INV-MULTI-{uuid.uuid4().hex[:8].upper()}"
+        second = t.Invoice(
+            invoice_no=new_no,
+            invoice_code=None,
+            supplier_id=invoice.supplier_id,
+            invoice_date=invoice.invoice_date,
+            amount_tax_excl=Decimal("0"),
+            tax_amount=Decimal("0"),
+            amount_tax_incl=Decimal("0"),
+            status="new",
+        )
+        session.add(second)
+        await session.flush()
+        for line in invoice_lines:
+            session.add(
+                t.InvoiceLine(
+                    invoice_id=second.id,
+                    line_no=line.line_no,
+                    item_desc=line.item_desc,
+                    spec_bucket=line.spec_bucket,
+                    qty=Decimal("0"),
+                    unit_price_tax_excl=line.unit_price_tax_excl,
+                    tax_rate=line.tax_rate,
+                    amount_tax_excl=Decimal("0"),
+                    amount_tax_incl=Decimal("0"),
+                )
+            )
+        po_lines = (
+            await session.scalars(select(t.PoLine).where(t.PoLine.po_id == po_row.id).order_by(t.PoLine.line_no))
+        ).all()
+        before = {line.line_no: float(line.qty_invoiced) for line in po_lines}
+        await session.commit()
+
+    # 重复发票号必须在入口去重，否则会重复核销
+    subject = {"po_no": po_no, "invoice_nos": [invoice_no, new_no, invoice_no]}
+    run_id = await _create_run(subject)
+    graph = build_matching_graph(_deps())
+    config = {"configurable": {"thread_id": str(run_id)}}
+    state = await graph.ainvoke({"run_id": str(run_id), "subject": subject}, config)
+    report = state["report"]
+    assert report["multi_invoice"] is True
+    assert report["invoice_nos"] == [invoice_no, new_no]
+    assert state["invoice_ids"] == [str(invoice.id), str(second.id)]
+    assert [item["invoice_no"] for item in report["invoices"]] == [invoice_no, new_no]
+    assert len(report["line_matches"]) >= 1
+    assert all(match.get("invoice_no") for match in report["line_matches"])
+    assert all(diff.get("invoice_no") for diff in report["diffs"])
+
+    expected: dict[int, float] = {}
+    for match in report["line_matches"]:
+        if match.get("consumed_qty"):
+            expected[match["po_line_no"]] = expected.get(match["po_line_no"], 0.0) + float(match["consumed_qty"])
+
+    await graph.aupdate_state(
+        config,
+        {"decision": "accept", "reviewer_note": "multi invoice batch", "review_id": None},
+    )
+    final_state = await graph.ainvoke(None, config)
+    assert final_state["finalized"] is True
+
+    async with get_session_factory()() as session:
+        for no in (invoice_no, new_no):
+            row = await session.scalar(select(t.Invoice).where(t.Invoice.invoice_no == no))
+            assert row is not None and row.status == "matched"
+        match_run = await session.scalar(
+            select(t.MatchRun).where(t.MatchRun.po_id == po_row.id).order_by(t.MatchRun.created_at.desc())
+        )
+        assert match_run is not None
+        assert match_run.invoice_ids == [str(invoice.id), str(second.id)]
+        po_rows = (
+            await session.scalars(select(t.PoLine).where(t.PoLine.po_id == po_row.id).order_by(t.PoLine.line_no))
+        ).all()
+        for line in po_rows:
+            assert abs(float(line.qty_invoiced) - (before[line.line_no] + expected.get(line.line_no, 0.0))) < 1e-6

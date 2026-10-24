@@ -9,6 +9,7 @@ import {
   formatMoney,
   formatQty,
   overallMeta,
+  parseInvoiceNos,
   roleCanReviewM3,
   severityClass,
 } from "./m3";
@@ -140,5 +141,56 @@ describe("annotationBoxStyle", () => {
       width: "100%",
       height: "0%",
     });
+  });
+});
+
+describe("parseInvoiceNos / multi-invoice alignRows", () => {
+  it("解析逗号/空格分隔的发票号并去重保序", () => {
+    expect(parseInvoiceNos("INV-1, INV-2，INV-1  INV-3")).toEqual(["INV-1", "INV-2", "INV-3"]);
+    expect(parseInvoiceNos("  ")).toEqual([]);
+  });
+
+  it("多发票报告：对齐行按发票号区分 key，未匹配行按发票分组补齐", () => {
+    const report: M3Report = {
+      module: "m3",
+      po_no: "PO-1",
+      invoice_no: "INV-1",
+      invoice_nos: ["INV-1", "INV-2"],
+      multi_invoice: true,
+      invoices: [
+        { invoice_no: "INV-1", lines: [{ line_no: 1, item_desc: "A", qty: 2 }] },
+        { invoice_no: "INV-2", lines: [{ line_no: 1, item_desc: "A", qty: 1 }] },
+      ],
+      overall: "hold",
+      diffs: [],
+      line_matches: [
+        {
+          po_line_no: 1,
+          invoice_line_no: 1,
+          invoice_no: "INV-1",
+          method: "exact",
+          score: 1,
+          consumed_qty: 2,
+          remaining_qty: 0,
+          status: "matched",
+        },
+        {
+          po_line_no: 1,
+          invoice_line_no: 1,
+          invoice_no: "INV-2",
+          method: "exact",
+          score: 1,
+          consumed_qty: 1,
+          remaining_qty: 0,
+          status: "matched",
+        },
+      ],
+      po_lines: [{ line_no: 1, item_desc: "A", qty_ordered: 3, unit_price_tax_excl: 10 }],
+      invoice_lines: [{ line_no: 1, item_desc: "A", qty: 2 }],
+    };
+    const rows = alignRows(report);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.invoiceNo)).toEqual(["INV-1", "INV-2"]);
+    expect(new Set(rows.map((row) => row.key)).size).toBe(2);
   });
 });

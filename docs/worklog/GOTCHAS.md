@@ -407,3 +407,15 @@
 - **根因定位**：测试 PDF 内容固定，doc.sha256 全局唯一。
 - **修复手段**：测试 PDF 尾部拼随机 uuid，保证每次运行首个上传唯一，同时仍能在用例内验证第二次去重。
 - **防回归**：该集成测试可重复执行。
+
+## G-050｜M3 多发票：顺序核销必须在内存里滚动 `qty_invoiced`，且入口要去重
+- **问题现象**：同一 PO 两张发票若各自独立 reconcile，第二张会按原始 `qty_invoiced` 计算可开票上限，导致重复核销/漏报超发。
+- **根因定位**：`reconcile(po=...)` 只读数据库快照；单发票图没有"本批已消耗"的概念。
+- **修复手段**：`reconcile_document` 对 `po_work` 深拷贝，每张发票产生的 `consumed_qty` 滚入下一张的 PO 行；数据库写入仍只在 `finalize` 单事务；`load_subject` 对 `invoice_nos` 去重保序并限制 ≤20 张，防止重复提交重复核销。
+- **防回归**：`test_multi_invoice_batch_reconciles_sequentially_and_finalizes_all`（双发票、重复号去重、qty_invoiced 累加、两张状态 matched、match_run.invoice_ids 两条）。
+
+## G-051｜前端多发票对齐表 key 冲突
+- **问题现象**：多张发票的 `po_line_no + invoice_line_no` 可能相同，React row key 重复导致渲染错位。
+- **根因定位**：`alignRows` 只用行号构造 key，未带发票号。
+- **修复手段**：`AlignRow` 增加 `invoiceNo`，key 改成 `match-${invoiceNo}-${poLineNo}-${invoiceLineNo}`；未匹配行按发票分组补齐。
+- **防回归**：`m3.test.ts` 增加双发票 alignRows 用例（key 唯一、两条行）。

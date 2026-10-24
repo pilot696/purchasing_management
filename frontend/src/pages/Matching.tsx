@@ -23,6 +23,7 @@ import {
   formatQty,
   overallMeta,
   overallToneClass,
+  parseInvoiceNos,
   roleCanReviewM3,
   severityClass,
 } from "../lib/m3";
@@ -69,7 +70,7 @@ export default function Matching() {
   const rows = useMemo(() => (report ? alignRows(report) : []), [report]);
 
   const start = useMutation({
-    mutationFn: () => startRun("m3", { po_no: poNo, invoice_nos: [invoiceNo] }),
+    mutationFn: () => startRun("m3", { po_no: poNo, invoice_nos: parseInvoiceNos(invoiceNo) }),
     onSuccess: (response) => {
       setRunId(response.run_id);
       setDecisionError(null);
@@ -203,17 +204,18 @@ export default function Matching() {
             />
           </label>
           <label className="flex flex-col gap-1 text-[12px] text-[var(--text-secondary)]">
-            发票号
+            发票号（多张用逗号/空格分隔）
             <input
-              className="w-44 rounded-md border border-[var(--border-default)] px-2 py-1.5 text-[13px]"
+              className="w-64 rounded-md border border-[var(--border-default)] px-2 py-1.5 text-[13px]"
               value={invoiceNo}
               onChange={(event) => setInvoiceNo(event.target.value)}
               disabled={Boolean(runId)}
+              placeholder="INV-2026-3000, INV-2026-3001"
             />
           </label>
           <button
             type="button"
-            disabled={start.isPending || !poNo.trim() || !invoiceNo.trim()}
+            disabled={start.isPending || !poNo.trim() || parseInvoiceNos(invoiceNo).length === 0}
             onClick={() => start.mutate()}
             className="rounded-md bg-[var(--brand-primary)] px-3 py-2 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -275,11 +277,20 @@ export default function Matching() {
                   {overall.label}
                 </span>
                 <span className="font-medium">
-                  {report.po_no} ↔ {report.invoice_no}
+                  {report.po_no} ↔ {(report.invoice_nos ?? [report.invoice_no]).join("、")}
+                  {report.multi_invoice ? `（${report.invoice_nos?.length ?? 1} 张）` : ""}
                 </span>
                 <span className="text-[var(--text-muted)]">
                   PO {formatMoney(report.po_total)} / 发票 {formatMoney(report.invoice_total)}
                 </span>
+                {report.invoices?.map((invoice) => (
+                  <span
+                    key={invoice.invoice_no}
+                    className="rounded-md border border-[var(--border-default)] bg-[var(--bg-subtle)] px-2 py-1 text-[11px]"
+                  >
+                    {invoice.invoice_no} · {formatMoney(invoice.amount_tax_incl)}
+                  </span>
+                ))}
                 {report.proposed_tail !== undefined && Math.abs(report.proposed_tail) >= 0.005 && (
                   <span className="rounded-md border border-[var(--border-default)] bg-[var(--bg-subtle)] px-2 py-1 text-[12px]">
                     尾差 {formatMoney(report.proposed_tail)}
@@ -357,15 +368,20 @@ export default function Matching() {
                         <td className="px-2 py-2 text-right">{formatQty(row.match?.remaining_qty)}</td>
                         <td className="px-2 py-2">{row.match?.status ?? "unmatched"}</td>
                         <td className="px-2 py-2">
-                          {invoiceDocId && (
-                            <button
-                              type="button"
-                              onClick={() => void openDrawer(invoiceDocId, `发票 ${report.invoice_no}`)}
-                              className="text-[12px] text-[var(--brand-primary)] underline-offset-2 hover:underline"
-                            >
-                              查看发票
-                            </button>
-                          )}
+                          {(() => {
+                            const docId =
+                              report.invoices?.find((item) => item.invoice_no === row.invoiceNo)?.doc_id ??
+                              (row.invoiceNo === report.invoice_no ? invoiceDocId : null);
+                            return docId ? (
+                              <button
+                                type="button"
+                                onClick={() => void openDrawer(docId, `发票 ${row.invoiceNo ?? ""}`)}
+                                className="text-[12px] text-[var(--brand-primary)] underline-offset-2 hover:underline"
+                              >
+                                查看发票
+                              </button>
+                            ) : null;
+                          })()}
                         </td>
                       </tr>
                     ))}
@@ -389,6 +405,7 @@ export default function Matching() {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-medium">
+                          {diff.invoice_no ? `${diff.invoice_no} · ` : ""}
                           {meta.label} · {diff.diff_type}
                         </span>
                         <span className="text-[11px]">Δ {formatDelta(diff)}</span>

@@ -1,4 +1,4 @@
-﻿# 评测报告（合成数据基线）
+# 评测报告（合成数据基线）
 
 > 生成日期：2026-10-23 ｜ seed=42 ｜ 运行模式：**离线 FakeLLM**（`FORCE_FAKE_LLM=1`，真实 API 未接入）
 > 原始数据：[`evals/extraction_baseline.json`](evals/extraction_baseline.json)、[`evals/m1_baseline.json`](evals/m1_baseline.json)、
@@ -82,10 +82,10 @@ LLM 复核者叙述（schema 无分数，`evidence_refs` 后置校验）。**未
 
 | 项 | 结果 |
 |---|---|
-| 后端单测 | **88 passed / 22 skipped** |
-| 后端集成测试（DB） | **17 passed / 1 skipped** |
-| 前端单测 | **39 passed** |
-| 前端构建 | **360.90 KB / gzip 110.27 KB**（99→ 模块） |
+| 后端单测 | **91 passed / 3 skipped** |
+| 后端集成测试（DB） | **28 passed / 3 skipped** |
+| 前端单测 | **45 passed** |
+| 前端构建 | **390.71 KB / gzip 117.20 KB** |
 | 真实 e2e 冒烟 | `SMOKE_M1=OK` / `SMOKE_M2=OK` / `SMOKE_M3=OK` / `SMOKE_E2E=OK` |
 | 容器 | `docker compose up -d` 一键起（API 托管前端 dist，`/healthz` 探活） |
 
@@ -98,7 +98,7 @@ LLM 复核者叙述（schema 无分数，`evidence_refs` 后置校验）。**未
 4. **检索未接向量**：当前 RRF 由词法 + 精确 + 结构化三路组成；embedding provider 接入后再补 dense leg 与消融。
 5. **M2 缺专家 gold**：目前验证的是闸门/冷启动/敏感性契约；维度分 MAE 与 κ 需人工标注。
 6. **生产限制**：LangGraph `MemorySaver` 为进程内 checkpointer，多副本需换 Postgres saver；
-   M3 当前单发票/run（多发票分批已建模，驱动循环待 W4 后扩展）。
+   M3 已支持同一 PO 多发票（≤20 张，顺序核销；e2e 已验证双发票 run）。
 7. **人工基线**："人工 8min/组"是面板估算（estimated），非实测计时。
 
 ## 8. 复现命令
@@ -126,5 +126,3 @@ python scripts/smoke_m1.py && python scripts/smoke_m2.py && python scripts/smoke
 ```
 
 > 数字均来自上述命令的最近一次运行；`evals/latest.json` 为汇总快照，不手工编辑单项指标。
-
-

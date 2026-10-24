@@ -327,3 +327,14 @@
 - **验证结果**：后端 **118 passed / 0 failed / 6 skipped**（VM DB）；前端 **43 passed + typecheck/build OK**；e2e SMOKE_M1/M2/M3=OK（VM DB，FakeLLM）；上传去重/关联集成测试通过。
 - **未完成**：M3 多发票分批核销（仍取 invoice_nos[0]，前端单发票输入）；上传文档仅入库+抽取，未自动创建发票/PO 业务记录并接入 M3；幂等/限流未实现；M2 评测总分均值分母问题未修。
 - **下一步 (Next)**：多发票状态机 + 上传建档联动；然后真实模型全量 eval（需 VLM/embedding provider 与少量费用）。
+
+### [2026-10-24 08:45] W4-M3：多发票分批核销（后端图 + 前端 + 测试）
+- **变更文件**：`backend/app/agents/matching.py`、`backend/tests/test_matching_graph.py`、`frontend/src/lib/{m3.ts,m3.test.ts}`、`frontend/src/pages/Matching.tsx`、`docs/PROJECT_SPEC.md`（v1.15）、README/EVAL_REPORT/latest.json 数字。
+- **核心实现**：
+  - `load_subject` 加载发票列表（去重保序、≤20 张）；state 新增 `invoices/aligns/results`；
+  - `reconcile_document` 按输入顺序逐张 reconcile：前序 `consumed_qty` 内存累加到 PO 可开票上限，聚合 overall（hold > release_with_note > pass）、diffs、line_matches、尾差；
+  - `compose_report` 保留单发票旧字段（`invoice_no/invoice_lines`），新增 `invoice_nos[]/invoices[]/multi_invoice`，diffs/line_matches 带 `invoice_no`；
+  - `finalize` 按 `invoice_no` 映射行，单事务聚合累加 `po_line.qty_invoiced`、更新全部 `invoice.status`、写一次尾差池与审计；
+  - 前端发票号支持逗号/空格分隔多张，报告头显示批次与每张金额，对齐表按发票分组、每条行可打开对应发票 PDF，差异项带发票号。
+- **验证结果**：后端全量 **119 passed / 6 skipped**（单测 91/3、集成 28/3）；前端 **45 passed + typecheck/build OK**；单发票 `SMOKE_M3=OK`（`multi_invoice=false`）；双发票 HTTP e2e `MULTI=True → succeeded → 两张 invoice.status=matched`，`match_run.invoice_ids` 两条；重复发票号入口去重测试通过。
+- **下一步 (Next)**：真实模型全量评测（需 VLM/embedding 端点或费用确认）；上传文档自动建档（Invoice/PO 行项目）联动 M3。

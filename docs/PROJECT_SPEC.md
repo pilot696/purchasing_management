@@ -1,7 +1,7 @@
-﻿# 企业通用间接采购智能管理与风控系统 — PRD & Agent Spec
+# 企业通用间接采购智能管理与风控系统 — PRD & Agent Spec
 
 > **Procurement AI Agent Workbench**｜全栈 + Multi-Agent 工程级需求与技术架构说明书
-> 版本：v1.14（W4 演示闭环：运行历史/复核收件箱/规则库/可观测页 + 真实模型网关接入 + 截图资产）｜日期：2026-10-23｜目标岗位：AI 应用 / Agent 开发工程师
+> 版本：v1.15（W4 收尾：HITL edits、供应商目录/趋势、PDF 上传、M3 多发票分批核销、CI/依赖锁定）｜日期：2026-10-24｜目标岗位：AI 应用 / Agent 开发工程师
 > 本文档是开发与 pen.dev 画布设计的**唯一事实来源**。任何实现偏离需在 §13 变更记录中登记。
 
 ---
@@ -805,7 +805,8 @@ POST /api/v1/runs/{run_id}/resume
 
 > **M3 实现口径（v1.8）**：`matching_graph` 用 `StateGraph + interrupt_before=["finalize"]`；最终写操作（`match_run/match_line/match_diff`、`qty_invoiced`、尾差池、`invoice.status`、`audit_log`、`artifact`）全部在 `finalize` 单事务完成。
 > **幂等**：同一 `run_id` 重入 `finalize` 时以 `audit_log(target_table='match_run')` 是否存在为准，不重复累加 `qty_invoiced`。
-> **已知限制**：checkpointer 当前用进程内 `MemorySaver`（`RunService` 同进程 resume），重启后不能恢复中断运行；生产化时换 `PostgresSaver`（Spec §4.5 已预留）。M3 当前按**单张发票/次运行**处理，多发票批量在 W2 扩展。
+> **已知限制**：checkpointer 当前用进程内 `MemorySaver`（`RunService` 同进程 resume），重启后不能恢复中断运行；生产化时换 `PostgresSaver`（Spec §4.5 已预留）。
+> **多发票（v1.15 已实现）**：同一 PO 可一次提交最多 20 张发票（去重保序），按输入顺序逐张对齐/容差；前序发票的 `consumed_qty` 在内存中计入后续发票的可开票上限，`finalize` 单事务一次性累加 `po_line.qty_invoiced`、更新全部 `invoice.status`、聚合尾差池；报告新增 `invoice_nos[]` / `invoices[]`（含每张发票行）与 `multi_invoice`，旧单发票字段保留兼容。
 
 ### 4.7 可观测性
 
@@ -2539,6 +2540,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-23 | v1.12 | W3-M2 落地：`supplier_graph`（6 硬闸门短路 + 五维确定性评分 + 权重敏感性 + LLM 复核者 + HITL + finalize 单事务）、`app/scoring/supplier.py` 纯函数、M2 前端供应商看板（闸门条 + SVG 雷达 + 维度明细 + LLM 风险卡）、`scripts/m2_eval.py` 离线基线（30 家：闸门 100%/误报 0%/冷启动 100%/flip 5.55%）、`scripts/smoke_m2.py`；seed 证照基准有效期与闸门标记契约修复 | W3-M2 第 1~5 步实现 |
 | 2026-10-23 | v1.13 | W4 收尾：`docs/EVAL_REPORT.md` + `evals/latest.json`（四套基线汇总、7 条诚实边界、复现命令）；`design/tokens.json` + `design/design.pen`（schema 2.14，6 artboards）+ `preview.html` + `scripts/gen_design_pen.py`；根 `Dockerfile`（多阶段：前端构建→Python 运行时同端口托管）+ compose `api` 服务（迁移自动、healthcheck）+ `docs/DEPLOYMENT.md`；Spec §12 简历数字按实测回填（未测项显式标注） | W4 第 1~4 步实现 |
 | 2026-10-23 | v1.14 | W4 演示闭环：`GET /runs`（历史/分页/待复核关联）、`GET /reviews` 收件箱（模块/verdict/summary）、`GET /runs/{id}/trace`（事件+llm_call）、`GET /rules`（规则+容差只读）、`GET /observability/{summary,evals}`；Run 中心/规则库/可观测页落地，业务页 `?run=` 深链；OpenCode Go 真实网关接入（session 头/dotenv 展开/usage 归因/JSON 容错）；`scripts/demo_runs.py` + `scripts/screenshots.py`（7 张截图）；`docs/RESUME_TEMPLATE.md` | W4 演示闭环实现 |
+| 2026-10-24 | v1.15 | W4 收尾：HITL `edits` 全链路（M1 勾选/改值、审计只记实际应用集合）；`GET /suppliers` 目录/详情/趋势 + `GET /reviews/{id}` + `/metrics/overview`；`POST /documents/upload`（sha256 去重/关联）；M3 多发票顺序核销（≤20 张、`invoices[]`/`multi_invoice`、finalize 聚合 qty_invoiced 与全部 invoice.status）；CI + requirements 锁定 + eval_report 聚合脚本 | W4 收尾实现 |
 
 ---
 
@@ -2634,6 +2636,3 @@ make fmt lint  # ruff + eslint + prettier
 ---
 
 **文档结束**。开发过程中若出现与本规范冲突的实现，先在 §13.3 登记，再改代码。
-
-
-

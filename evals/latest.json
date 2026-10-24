@@ -211,25 +211,26 @@
       "diff_micro_f1": 1.0,
       "line_alignment_f1": 1.0
     },
-    "notes": "gold 与 reconcile 同源；每组 1 行时匈牙利与贪心指标相同"
+    "notes": "gold 与 reconcile 同源；每组 1 行时匈牙利与贪心指标相同；v1.15 已支持同 PO 多发票顺序核销（e2e 双发票验证）"
   },
   "engineering": {
     "backend_unit": {
-      "passed": 88,
-      "skipped": 18
-    },
-    "backend_integration": {
-      "passed": 19,
+      "passed": 91,
       "skipped": 3
     },
-    "frontend_unit": 39,
-    "frontend_build_kb": 381.67,
-    "frontend_build_gzip_kb": 114.45,
+    "backend_integration": {
+      "passed": 28,
+      "skipped": 3
+    },
+    "frontend_unit": 45,
+    "frontend_build_kb": 390.71,
+    "frontend_build_gzip_kb": 117.2,
     "screenshots": 7,
     "e2e_smokes": [
       "SMOKE_M1=OK",
       "SMOKE_M2=OK",
       "SMOKE_M3=OK",
+      "SMOKE_M3_MULTI=OK",
       "SMOKE_E2E=OK"
     ]
   },
