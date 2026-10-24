@@ -453,3 +453,23 @@
 - **现状**：`IdempotencyStore` 与 `SlidingWindowLimiter` 都是**进程内**实现；重启即失效、多 uvicorn worker 不共享。
 - **为什么可接受**：当前 LangGraph `MemorySaver` 本身就是单进程，演示/单副本部署一致；Spec 已标注明生产需 Redis/DB + 网关级限流。
 - **风险**：如果直接 `uvicorn --workers N`，同 key 打到不同 worker 会各自执行一次；部署文档需保持单 worker，或先换持久化实现。
+
+## G-058｜M1 预算幂等锚点不能依赖「有补丁才写审计」
+- **问题现象**：审查指出预算 `amount_committed` 永不消耗；补上写回后若按原 `pr_item` 审计做幂等，干净 PR（无补丁）不会产生该审计，重复 finalize 会重复占预算。
+- **修复手段**：放行时总是写一条 `target_table="pr"`、`action="precheck_release"` 的审计作为幂等锚点；budget 行 `SELECT ... FOR UPDATE` 后 `amount_committed += estimated`（Decimal）。
+- **防回归**：`tests/test_precheck_graph.py::test_precheck_release_commits_budget_once` 断言一次放行与重复 finalize 都不重复占用。
+
+## G-059｜合同总额校验在「仅发票」调用时误报
+- **问题现象**：`check_contract` 被拆成 PO 检查 + 每张发票检查，发票检查传了空 PO 桩（total=0），合同总额 vs 0 触发 contract_amount medium，导致每张发票都多一条差异。
+- **修复手段**：`contract_amount` 仅在 `contract_total > 0 and po_total > 0` 时执行；发票-only 调用只做合同行单价比对。
+- **防回归**：`tests/test_contract_check.py::test_contract_checks_clean_when_within_tolerance`。
+
+## G-060｜质量分“40% 缺陷权重”是恒等式，G3 还会重复
+- **问题现象**：上游 `defect_rate = 1 - qc_pass_rate`，旧公式 `60p + 40(1-defects)` 恒等于 `100p`；rework_rate 参数从未被传值。黑名单与 dishonest_judgment 同时命中会追加两条 G3。
+- **修复手段**：quality_score 明确为 `100 * qc_pass_rate` 并删除 rework 死代码；G3 合并为单次 add（保留不同 message）。
+- **防回归**：`test_scoring.py::test_quality_score_does_not_double_count_redundant_defect_rate` / `test_blacklisted_and_dishonest_do_not_duplicate_g3`。
+
+## G-061｜L3 灰区配对不能直接核销
+- **问题现象**：`SequenceMatcher.ratio >= 0.90` 对短中文误报高；“办公椅/办公桌”可能被判同物并自动 consumed。
+- **修复手段**：ambiguous match 一律 `consumed_qty=0`、`status="ambiguous"`，追加 `ambiguous_match` 高优差异（HARD→hold），需人工确认。
+- **防回归**：`tests/test_matching.py::test_ambiguous_l3_match_requires_human_before_consumption`。

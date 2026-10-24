@@ -51,6 +51,8 @@ export interface M2Report {
   llm_review: M2LlmReview | null;
   llm_status: string;
   llm_error?: string | null;
+  llm_dropped_refs?: number;
+  llm_dropped_refs_note?: string | null;
   sensitivity?: { flip_rate?: number; most_sensitive?: string; samples?: number };
   weight_version?: string;
   evidence_pack_ids?: string[];
@@ -160,6 +162,8 @@ export function asM2Report(value: unknown): M2Report | null {
     llm_review: candidate.llm_review ?? null,
     llm_status: candidate.llm_status ?? "unavailable",
     llm_error: candidate.llm_error,
+    llm_dropped_refs: candidate.llm_dropped_refs,
+    llm_dropped_refs_note: candidate.llm_dropped_refs_note,
     sensitivity: candidate.sensitivity,
     weight_version: candidate.weight_version,
     evidence_pack_ids: candidate.evidence_pack_ids,

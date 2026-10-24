@@ -776,6 +776,12 @@ def _compose(state: SupplierState, deps: SupplierDeps) -> dict[str, Any]:
             "cold_start": bool(context.get("cold_start")),
             "llm_status": state.get("llm_status") or ("skipped_gate_hit" if veto else "unavailable"),
             "llm_error": state.get("llm_error"),
+            "llm_dropped_refs": int(state.get("llm_dropped_refs") or 0),
+            "llm_dropped_refs_note": (
+                "LLM 输出的风险条目因 evidence_refs 不在证据包内被后置校验丢弃"
+                if int(state.get("llm_dropped_refs") or 0) > 0
+                else None
+            ),
         }
     )
     return {"report": report}
@@ -790,14 +796,17 @@ async def _finalize(state: SupplierState, deps: SupplierDeps) -> dict[str, Any]:
     context = state["context"]
 
     async with deps.session_factory() as session:
+        # 锁 run 行：并发 resume 同一 run 时串行化，审计查重才真正原子
+        run_row = await session.get(t.AgentRun, run_id, with_for_update=True)
+        if run_row is None:
+            raise ValueError(f"运行不存在：{run_id}")
         existing = await session.scalar(
             select(t.AuditLog.id).where(t.AuditLog.run_id == run_id, t.AuditLog.target_table == "supplier")
         )
         if existing is not None:
-            agent_run = await session.get(t.AgentRun, run_id)
-            if agent_run is not None and agent_run.status != "succeeded":
-                agent_run.status = "succeeded"
-                agent_run.finished_at = datetime.now(UTC)
+            if run_row.status != "succeeded":
+                run_row.status = "succeeded"
+                run_row.finished_at = datetime.now(UTC)
                 await session.commit()
             return {"finalized": True, "artifact_id": None}
 
@@ -856,10 +865,8 @@ async def _finalize(state: SupplierState, deps: SupplierDeps) -> dict[str, Any]:
                 note=f"M2 准入决策：{decision}",
             )
         )
-        agent_run = await session.get(t.AgentRun, run_id)
-        if agent_run is not None:
-            agent_run.status = "succeeded"
-            agent_run.finished_at = datetime.now(UTC)
+        run_row.status = "succeeded"
+        run_row.finished_at = datetime.now(UTC)
         await session.commit()
         await session.refresh(artifact)
         artifact_id = str(artifact.id)

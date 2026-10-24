@@ -447,3 +447,37 @@ export async function ingestDocument(docId: string, invoiceNo?: string): Promise
   if (!response.ok) throw await asError(response);
   return (await response.json()) as IngestInvoiceResult;
 }
+
+export interface ComparableQuote {
+  quote_id: string;
+  supplier_code: string | null;
+  supplier_name: string | null;
+  supplier_status: string | null;
+  lead_time_days: number | null;
+  payment_terms: string | null;
+  payment_days: number;
+  total_amount: number;
+  adjusted_amount: number;
+  valid_until: string | null;
+  price_index: number;
+  adjusted_index: number;
+  rank: number;
+  recommended: boolean;
+}
+
+export interface ComparablesResponse {
+  pr_no: string;
+  title: string;
+  category_code: string;
+  annual_rate: number;
+  items: Array<{ line_no: number; item_name: string; qty: number; unit: string }>;
+  quotes: ComparableQuote[];
+  recommended_supplier: string | null;
+}
+
+export async function getComparables(prNo: string, annualRate = 0.08): Promise<ComparablesResponse> {
+  const query = new URLSearchParams({ pr_no: prNo, annual_rate: String(annualRate) });
+  const response = await fetch(`/api/v1/quotes/comparables?${query.toString()}`);
+  if (!response.ok) throw await asError(response);
+  return (await response.json()) as ComparablesResponse;
+}

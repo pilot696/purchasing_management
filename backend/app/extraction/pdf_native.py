@@ -31,6 +31,21 @@ DATE_RE = re.compile(r"(20\d{2})-(\d{2})-(\d{2})")
 NAME_RE = re.compile(r"名称[:：]\s*([^\s]+)")
 TAX_ID_RE = re.compile(r"纳税人识别号[:：]\s*([0-9A-Z]{15,20})")
 
+# 真实增值税发票兼容：20 位发票号码、全角括号、￥/¥、“小写”等变体
+INVOICE_NO_LABEL_RE = re.compile(r"发票号码\s*[:：]?\s*([0-9A-Za-z-]{8,32})")
+INVOICE_NO_LEGACY_RE = re.compile(r"(INV[-_]?\d{4}[-_]?\d{4})")
+PO_NO_LABEL_RE = re.compile(r"(?:采购订单号|订单号)\s*[:：]?\s*([A-Za-z0-9-]{4,32})")
+AMOUNT_EXCL_PATTERNS = (
+    re.compile(rf"金额\s*[（(]\s*(?:未税|不含税)\s*[）)]\s*[¥￥]?\s*{MONEY}"),
+    re.compile(rf"不含税金额\s*[¥￥]?\s*{MONEY}"),
+    re.compile(rf"金额\s*[¥￥]\s*{MONEY}"),
+)
+TAX_AMOUNT_RE = re.compile(rf"税额\s*[¥￥]?\s*{MONEY}")
+AMOUNT_INCL_PATTERNS = (
+    re.compile(rf"价税合计[^\d]{{0,30}}?[（(]?\s*小写\s*[）)]?\s*[¥￥]?\s*{MONEY}"),
+    re.compile(rf"价税合计\s*[¥￥]\s*{MONEY}"),
+)
+
 LINE_HEADER_KEYS = {"行号", "序号"}
 SKIP_HEADER_VALUES = {"物料描述", "货物或应税劳务名称", "标的物", "数量", "规格桶", "规格型号"}
 
@@ -42,7 +57,15 @@ class ParseError(Exception):
 def _dec(value: str | None) -> Decimal | None:
     if not value:
         return None
-    cleaned = value.strip().replace("¥", "").replace(",", "").replace("%", "").strip()
+    cleaned = (
+        value.strip()
+        .replace("¥", "")
+        .replace("￥", "")
+        .replace(",", "")
+        .replace("，", "")
+        .replace("%", "")
+        .strip()
+    )
     try:
         return Decimal(cleaned)
     except InvalidOperation:
@@ -184,12 +207,26 @@ def _first_table_with(tables: list[list[list[str]]], *anchors: str) -> list[list
     return []
 
 
+def _extract_invoice_no(text: str) -> str | None:
+    return _search(INVOICE_NO_LABEL_RE, text) or _search(INVOICE_NO_LEGACY_RE, text)
+
+
+def _extract_invoice_amounts(text: str) -> dict[str, str | None]:
+    excl = next((_search(pattern, text) for pattern in AMOUNT_EXCL_PATTERNS if _search(pattern, text)), None)
+    incl = next((_search(pattern, text) for pattern in AMOUNT_INCL_PATTERNS if _search(pattern, text)), None)
+    return {
+        "amount_tax_excl": excl,
+        "tax_amount": _search(TAX_AMOUNT_RE, text),
+        "amount_tax_incl": incl,
+    }
+
+
 def parse_invoice(pdf_bytes: bytes) -> tuple[InvoiceExtract, list[Annotation]]:
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         page = pdf.pages[0]
         text = page.extract_text() or ""
         tables = page.extract_tables() or []
-    invoice_no = _search(INVOICE_NO_RE, text)
+    invoice_no = _extract_invoice_no(text)
     if not invoice_no:
         raise ParseError("发票号码未找到")
     header = _header_map(tables)
@@ -205,10 +242,11 @@ def parse_invoice(pdf_bytes: bytes) -> tuple[InvoiceExtract, list[Annotation]]:
     seller_tax = _search(TAX_ID_RE, seller_block)
     invoice_code = header.get("发票代码") or _search(re.compile(r"发票代码[:：]?\s*(\d{12,20})"), text)
     invoice_date = _date(header.get("开票日期")) or _date(text)
+    amount_text = _extract_invoice_amounts(text)
     amounts = {
-        "amount_tax_excl": _dec(_search(re.compile(rf"金额\(未税\)\s*¥\s*{MONEY}"), text)),
-        "tax_amount": _dec(_search(re.compile(rf"税额\s*¥\s*{MONEY}"), text)),
-        "amount_tax_incl": _dec(_search(re.compile(rf"价税合计\s*¥\s*{MONEY}"), text)),
+        "amount_tax_excl": _dec(amount_text["amount_tax_excl"]),
+        "tax_amount": _dec(amount_text["tax_amount"]),
+        "amount_tax_incl": _dec(amount_text["amount_tax_incl"]),
     }
     po_no = _search(re.compile(r"采购订单号[:：]\s*(PO-\d{4}-\d{4})"), text)
     remark = _search(re.compile(r"备注[:：]\s*(.*?)\s+采购订单号"), text)

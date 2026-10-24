@@ -13,7 +13,7 @@
 
 **已验证**（2026-10-24，seed=42；确定性基线离线，M2 另跑真实网关全量）：
 
-- 后端测试 **128 个（121 passed / 7 skipped**：单测 92/3、DB 集成 29/4）；前端单测 **45 passed**；`tsc` + `vite build` 通过（391.96KB / gzip 117.51KB）。
+- 后端测试 **139 个（132 passed / 7 skipped**：单测 101/3、DB 集成 31/4）；前端单测 **45 passed**；`tsc` + `vite build` 通过（398.09KB / gzip 119.25KB）。
 - 真实 e2e 冒烟全绿：`SMOKE_M1=OK`（needs_info + 补丁写回）、`SMOKE_M2=OK`（SUP-001 approve 94.43）、
   `SMOKE_M3=OK`（overall=hold + PDF 注释 + 财务放行）、`SMOKE_E2E=OK`（SSE/中断/恢复契约）。
 - **真实模型已接**：OpenCode Go（OpenAI 兼容）跑通 M2 LLM 复核闭环（deepseek-v4.1-flash，单次 tokens 1658→2662、
@@ -27,6 +27,7 @@
 - 基线：M3 行对齐 F1 **1.0** / 差异 F1 **1.0**（80 组）；M1 verdict **100%** / 检索 top-1 **100%**（120/105）；
   M2 闸门检出 **100%** / 误报 **0%** / 冷启动一致 **100%**（30 家离线 + 23 家真实）；
   M2 总分口径：**mean_scored 79.50**（23 家参与评分），旧口径 mean 60.95（含 7 家闸门否决 0 分）；详见 [EVAL_REPORT.md](docs/EVAL_REPORT.md)。
+- **审查驱动的正确性修复（v1.18）**：M3 finalize 核销/尾差池改全程 Decimal；M1/M2/M3 finalize 加 run 行锁（并发 resume 串行、审计查重原子）；M1 放行同事务写回预算 `amount_committed`（行锁）；合同行接入 M3（`contract_price/qty/amount/delivery`）；M2 新增同一 PR 多供应商横向比价（账期资金占用折算）；M1 增加库存/历史采购/验收条款展示；并修复 quality_score 冗余公式、G3 重复闸门、规则除零、L3 ambiguous 自动核销、上传/建档并发 500、红冲负数、词法噪声、LLM 证据丢弃不可见、真实发票号/金额正则等。
 - 上传建档：M3 上传 PDF 后可一键 `POST /documents/{id}/ingest` → 抽取并创建 Invoice + InvoiceLine（供应商匹配、金额/行归一化、sha256 去重、发票号冲突 409），随后按发票号进入 M3 匹配。
 - 幂等/限流：`POST /runs`、`/runs/{id}/resume`、`/reviews/{id}/decision` 支持 `Idempotency-Key`（进程内 24h TTL，单副本）；演示限流默认 10 次/分钟/角色。
 - 部署资产：多阶段 `Dockerfile`（Node 构建前端 → Python 运行时同端口托管 SPA + API）、`docker compose up -d --build`
@@ -36,6 +37,7 @@
 - 简历数字：Spec §12 占位符已按实测回填；[RESUME_TEMPLATE.md](docs/RESUME_TEMPLATE.md) 提供匿名模板 + STAR 口径。
 
 **仍未测/待接入**（不写进数字）：向量检索 leg（dense 代码未实现，ADR-020）、M2 专家标注 gold（维度 MAE/κ）、
+真实增值税发票/合同独立测试集（正则已支持 20 位号码、全角括号、￥/小写等变体，但未做人工标注验证）、
 M1/M3 真实模型基线（这两套本身确定性）、端到端 P95 压测；扫描件 VLM 已测（见上），但合同/PO 只有"成功抽取"、
 没有逐字段 gold，且 VLM 未输出 bbox（扫描件 PDF 暂无高亮）；幂等/限流为进程内实现（生产需 Redis/网关级）。
 全部记录在 [EVAL_REPORT.md §7](docs/EVAL_REPORT.md)。

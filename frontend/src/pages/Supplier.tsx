@@ -2,7 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { getDemoRole, getRunSnapshot, getSupplier, listSuppliers, resumeRun, startRun } from "../lib/api";
+import { getComparables, getDemoRole, getRunSnapshot, getSupplier, listSuppliers, resumeRun, startRun } from "../lib/api";
 import { isTerminal } from "../lib/events";
 import {
   asM2Report,
@@ -46,6 +46,7 @@ function Radar({ dimensions }: { dimensions: Array<{ dimension: string; score: n
 
 export default function Supplier() {
   const [supplierCode, setSupplierCode] = useState(DEFAULT_SUPPLIER);
+  const [comparePr, setComparePr] = useState("PR-2026-0001");
   const [searchParams] = useSearchParams();
   const [runId, setRunId] = useState<string | null>(() => searchParams.get("run"));
   const [decisionError, setDecisionError] = useState<string | null>(null);
@@ -59,6 +60,12 @@ export default function Supplier() {
     enabled: Boolean(runId) && isTerminal(run.status),
   });
   const supplierDirectory = useQuery({ queryKey: ["suppliers"], queryFn: () => listSuppliers() });
+  const comparables = useQuery({
+    queryKey: ["comparables", comparePr],
+    queryFn: () => getComparables(comparePr),
+    enabled: Boolean(comparePr.trim()),
+    retry: false,
+  });
   const supplierDetail = useQuery({
     queryKey: ["supplier", supplierCode],
     queryFn: () => getSupplier(supplierCode),
@@ -203,6 +210,80 @@ export default function Supplier() {
             )}
           </div>
         </div>
+      </section>
+
+      <section className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="mr-auto">
+            <h2 className="text-sm font-semibold">横向比价（同一 PR 多供应商报价）</h2>
+            <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+              按“含税报价 + 账期资金占用成本（年化 8%）”排序；绿色为调整后最优。
+            </p>
+          </div>
+          <label className="flex flex-col gap-1 text-[12px] text-[var(--text-secondary)]">
+            PR 号
+            <input
+              className="w-44 rounded-md border border-[var(--border-default)] px-2 py-1.5 text-[13px]"
+              value={comparePr}
+              onChange={(event) => setComparePr(event.target.value)}
+            />
+          </label>
+        </div>
+        {comparables.isError && (
+          <p className="mt-3 text-[12px] text-[var(--danger)]">比价加载失败：{String(comparables.error)}</p>
+        )}
+        {comparables.data && (
+          <div className="mt-3 overflow-x-auto">
+            <p className="mb-2 text-[11px] text-[var(--text-secondary)]">
+              {comparables.data.title} · {comparables.data.category_code} · 推荐供应商{" "}
+              <b>{comparables.data.recommended_supplier ?? "—"}</b>
+            </p>
+            <table className="w-full text-left text-[12px]">
+              <thead className="text-[11px] text-[var(--text-muted)]">
+                <tr>
+                  <th className="px-2 py-1.5">排名</th>
+                  <th className="px-2 py-1.5">供应商</th>
+                  <th className="px-2 py-1.5">状态</th>
+                  <th className="px-2 py-1.5 text-right">含税报价</th>
+                  <th className="px-2 py-1.5">账期</th>
+                  <th className="px-2 py-1.5 text-right">资金占用</th>
+                  <th className="px-2 py-1.5 text-right">调整后报价</th>
+                  <th className="px-2 py-1.5 text-right">交期</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparables.data.quotes.map((quote) => (
+                  <tr
+                    key={quote.quote_id}
+                    className={`border-t border-[var(--border-default)] ${quote.recommended ? "bg-emerald-50/60" : ""}`}
+                  >
+                    <td className="px-2 py-1.5">{quote.rank}</td>
+                    <td className="px-2 py-1.5">
+                      {quote.supplier_code} · {quote.supplier_name}
+                    </td>
+                    <td className="px-2 py-1.5">{quote.supplier_status ?? "—"}</td>
+                    <td className="px-2 py-1.5 text-right">
+                      {quote.total_amount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-2 py-1.5">
+                      {quote.payment_terms ?? "—"}（{quote.payment_days} 天）
+                    </td>
+                    <td className="px-2 py-1.5 text-right">
+                      {(quote.adjusted_amount - quote.total_amount).toFixed(2)}
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-medium">
+                      {quote.adjusted_amount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-2 py-1.5 text-right">{quote.lead_time_days ?? "—"} 天</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {comparables.data.quotes.length === 0 && (
+              <p className="py-3 text-[12px] text-[var(--text-muted)]">该 PR 暂无报价（先运行 seed_quotes）。</p>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4">
@@ -390,6 +471,11 @@ export default function Supplier() {
             <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4">
               <h2 className="text-sm font-semibold">LLM 风险复核</h2>
               <p className="mt-1 text-[11px] text-[var(--text-muted)]">{llmStatusLabel(report.llm_status)}</p>
+              {(report.llm_dropped_refs ?? 0) > 0 && (
+                <p className="mt-1 text-[11px] text-[var(--semantic-warning)]">
+                  后置证据校验丢弃了 {report.llm_dropped_refs} 条风险（引用不在证据包内），未展示。
+                </p>
+              )}
               {report.llm_review ? (
                 <div className="mt-2 space-y-2 text-[12px]">
                   <p className="leading-5 text-[var(--text-secondary)]">{report.llm_review.risk_summary}</p>
@@ -477,4 +563,3 @@ export default function Supplier() {
     </div>
   );
 }
-

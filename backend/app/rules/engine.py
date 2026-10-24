@@ -147,15 +147,18 @@ def evaluate(expression: Any, data: dict[str, Any]) -> Any:
             raise RuleEvalError(f"比较类型不匹配：{left!r} {operator} {right!r}") from exc
     if operator in ARITHMETIC:
         left, right = evaluate(args[0], data), evaluate(args[1], data)
-        if operator == "+":
-            return left + right
-        if operator == "-":
-            return left - right
-        if operator == "*":
-            return left * right
-        if operator == "/":
-            return left / right
-        return left % right
+        try:
+            if operator == "+":
+                return left + right
+            if operator == "-":
+                return left - right
+            if operator == "*":
+                return left * right
+            if operator == "/":
+                return left / right
+            return left % right
+        except (TypeError, ZeroDivisionError) as exc:
+            raise RuleEvalError(f"算术运算失败：{left!r} {operator} {right!r}") from exc
     if operator in {"and", "or"}:
         values = [bool(evaluate(item, data)) for item in args]
         return all(values) if operator == "and" else any(values)

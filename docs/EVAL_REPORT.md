@@ -82,10 +82,10 @@ LLM 复核者叙述（schema 无分数，`evidence_refs` 后置校验）。**未
 
 | 项 | 结果 |
 |---|---|
-| 后端单测 | **92 passed / 3 skipped**（95 个） |
-| 后端集成测试（DB） | **29 passed / 4 skipped**（33 个） |
+| 后端单测 | **101 passed / 3 skipped**（104 个） |
+| 后端集成测试（DB） | **31 passed / 4 skipped**（35 个） |
 | 前端单测 | **45 passed** |
-| 前端构建 | **391.96 KB / gzip 117.51 KB** |
+| 前端构建 | **398.09 KB / gzip 119.25 KB** |
 | 真实 e2e 冒烟 | `SMOKE_M1=OK` / `SMOKE_M2=OK` / `SMOKE_M3=OK` / `SMOKE_E2E=OK`；M3 双发票 HTTP e2e 通过（两张 invoice.status=matched） |
 | 容器 | `docker compose up -d` 一键起（API 托管前端 dist，`/healthz` 探活） |
 
@@ -171,3 +171,13 @@ python scripts/smoke_m1.py && python scripts/smoke_m2.py && python scripts/smoke
 ```
 
 > 数字均来自上述命令的最近一次运行；`evals/latest.json` 为汇总快照，不手工编辑单项指标。
+
+
+## 9. 审查驱动修复（v1.18）
+
+> 本节回应外部审查的 P0/P1/P2 问题；不是新评测，而是正确性/覆盖修复记录。
+
+- **P0 财务正确性**：M3 finalize 的 `qty_invoiced` 累加与尾差池改 Decimal（`ROUND_HALF_UP`、按 DB 精度 quantize）；M1/M2/M3 finalize 先 `SELECT ... FOR UPDATE` 锁 run 行再查审计，消除并发 resume 双写；M1 放行同事务、锁 budget 行写回 `amount_committed`，并新增 `precheck_release` 审计锚点。
+- **P1 业务覆盖**：M3 装载 `ContractLine`，新增 `contract_price/contract_qty/contract_amount/contract_delivery` 差异并升级 overall；M2 新增 `GET /quotes/comparables`（同一 PR 多供应商报价，按含税价 + 年化 8% 账期资金占用排序）与前端表格；M1 增加库存可用量、最近一次历史 PO 成交价、验收条款显式状态（未结构化执行时明确标注）。
+- **P2 缺陷修复**：quality_score 删除恒等冗余的 40% 缺陷项与 rework 死代码；G3 黑名单/失信去重；规则算术除零/类型错误包 `RuleEvalError`；L3 ambiguous 配对 consumed=0 + `ambiguous_match` 高优差异；上传 sha/发票号并发唯一约束兜底；红冲负数数量允许并标记人工复核；词法检索加 `min_similarity=0.05`；LLM 丢弃证据条数写回 report 并在前端展示；PDF 原生解析兼容 20 位发票号、全角括号、￥/¥、“小写”等变体。
+- **仍未解决**：真实票据人工标注 gold、M2 专家 gold（MAE/κ）、embedding dense leg、生产级鉴权/限流/Postgres checkpointer；上述基线仍是同源回归，不能替代真实泛化评测。

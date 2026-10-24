@@ -95,3 +95,8 @@ def test_verdict_mapping() -> None:
     assert verdict_from_findings([]) == "pass"
     assert verdict_from_findings([{"type": "required"}]) == "needs_info"
     assert verdict_from_findings([{"type": "cross_field"}, {"type": "policy_ref"}]) == "block"
+
+
+def test_arithmetic_division_by_zero_wrapped_as_rule_error() -> None:
+    with pytest.raises(RuleEvalError):
+        evaluate({"/": [{"var": "x"}, 0]}, {"x": 1})

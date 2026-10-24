@@ -12,7 +12,19 @@ from typing import Any, Iterable
 
 from app.matching.align import AlignResult
 
-HARD_DIFF_TYPES = frozenset({"price", "amount", "tax_rate", "qty_over", "terms_conflict"})
+HARD_DIFF_TYPES = frozenset(
+    {
+        "price",
+        "amount",
+        "tax_rate",
+        "qty_over",
+        "terms_conflict",
+        "ambiguous_match",
+        "contract_price",
+        "contract_qty",
+        "contract_amount",
+    }
+)
 SUPPRESS_AMOUNT_WHEN = frozenset({"price", "tax_rate", "qty_over", "terms_conflict"})
 
 DIFF_SEVERITY = {
@@ -22,6 +34,7 @@ DIFF_SEVERITY = {
     "qty_over": "high",
     "date_overdue": "low",
     "terms_conflict": "medium",
+    "ambiguous_match": "high",
     "tail": "low",
 }
 DIFF_RULES = {
@@ -31,6 +44,7 @@ DIFF_RULES = {
     "qty_over": "TOL-QTY-01",
     "date_overdue": "TOL-DATE-01",
     "terms_conflict": "TOL-TERMS-01",
+    "ambiguous_match": "TOL-ALIGN-01",
     "tail": "TOL-TAIL-01",
 }
 SUGGESTIONS = {
@@ -40,6 +54,7 @@ SUGGESTIONS = {
     "qty_over": "超发：要求供应商冲红重开或补签超发说明",
     "date_overdue": "逾期到货，按合同违约条款处理并记录",
     "terms_conflict": "付款条款冲突，需财务与采购共同确认",
+    "ambiguous_match": "L3 近似配对置信度不足：人工确认行项目前不得自动核销",
     "tail": "尾差在容差内，自动平账并留痕",
 }
 
@@ -61,6 +76,7 @@ DEFAULT_POLICIES: tuple[TolerancePolicy, ...] = (
     TolerancePolicy("qty_over", 0.0, 0.0, "hold", 5),
     TolerancePolicy("date_overdue", 7.0, 0.0, "release_with_note", 40),
     TolerancePolicy("terms_conflict", 0.0, 0.0, "hold", 20),
+    TolerancePolicy("ambiguous_match", 0.0, 0.0, "hold", 5),
     TolerancePolicy("tail", 0.05, 0.0, "auto_clear", 90),
 )
 
@@ -239,7 +255,20 @@ def reconcile(
         consumed = min(inv_qty, open_qty)
         remaining = open_qty - consumed
 
-        if delta_qty > 1e-9:
+        if match.ambiguous:
+            add_diff(
+                "ambiguous_match",
+                po_line_no=match.po_line_no,
+                invoice_line_no=match.invoice_line_no,
+                expected=round(open_qty, 4),
+                actual=round(inv_qty, 4),
+                delta=round(delta_qty, 4),
+                detail="L3 语义相似度处于灰区（0.75~0.90 或短文本高分），需人工确认后才可核销",
+            )
+            consumed = 0.0
+            remaining = open_qty
+            status = "ambiguous"
+        elif delta_qty > 1e-9:
             add_diff(
                 "qty_over",
                 po_line_no=match.po_line_no,

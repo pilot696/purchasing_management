@@ -17,7 +17,7 @@ from uuid import UUID
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.matching.normalize import normalize
@@ -65,6 +65,86 @@ def _as_date(value: Any) -> str | None:
     return str(value)
 
 
+async def _inventory_checks(session: AsyncSession, items: list[t.PrItem]) -> list[dict[str, Any]]:
+    """库存可用量（现货 - 预留）：可覆盖时给采购建议，不写入 findings 以免影响金标判定。"""
+    checks: list[dict[str, Any]] = []
+    for item in items:
+        conditions = []
+        if item.sku_id:
+            conditions.append(t.InventoryItem.sku_id == item.sku_id)
+        if item.spec_bucket:
+            conditions.append(t.InventoryItem.spec_bucket == item.spec_bucket)
+        if not conditions:
+            continue
+        stock = (await session.scalars(select(t.InventoryItem).where(or_(*conditions)))).all()
+        on_hand = sum((Decimal(row.qty_on_hand or 0) for row in stock), Decimal("0"))
+        reserved = sum((Decimal(row.qty_reserved or 0) for row in stock), Decimal("0"))
+        available = max(Decimal("0"), on_hand - reserved)
+        required = Decimal(item.qty or 0)
+        coverage = float(available / required) if required > 0 else 0.0
+        if available >= required and required > 0:
+            suggestion = "库存可覆盖本次需求，建议确认是否仍需采购"
+        elif available > 0:
+            suggestion = f"库存可覆盖 {coverage:.0%}，建议与需求部门确认缺口数量"
+        else:
+            suggestion = "无可用库存，按采购流程执行"
+        checks.append(
+            {
+                "pr_item_id": str(item.id),
+                "line_no": item.line_no,
+                "item_name": item.item_name_raw,
+                "spec_bucket": item.spec_bucket,
+                "qty_required": float(required),
+                "qty_on_hand": float(on_hand),
+                "qty_reserved": float(reserved),
+                "qty_available": float(available),
+                "coverage": round(coverage, 4),
+                "suggestion": suggestion,
+            }
+        )
+    return checks
+
+
+async def _purchase_history(session: AsyncSession, items: list[t.PrItem]) -> list[dict[str, Any]]:
+    """历史采购对照：同 SKU/规格桶的最近一次 PO 成交价与数量。"""
+    history: list[dict[str, Any]] = []
+    for item in items:
+        conditions = []
+        if item.sku_id:
+            conditions.append(t.PoLine.sku_id == item.sku_id)
+        if item.spec_bucket:
+            conditions.append(t.PoLine.spec_bucket == item.spec_bucket)
+        if not conditions:
+            continue
+        row = await session.execute(
+            select(t.PoLine, t.Po)
+            .join(t.Po, t.PoLine.po_id == t.Po.id)
+            .where(or_(*conditions))
+            .order_by(t.Po.ordered_at.desc().nullslast())
+            .limit(1)
+        )
+        last_line, last_po = row.one_or_none() or (None, None)
+        if last_line is None or last_po is None:
+            continue
+        history.append(
+            {
+                "pr_item_id": str(item.id),
+                "line_no": item.line_no,
+                "item_name": item.item_name_raw,
+                "last_po_no": last_po.po_no,
+                "last_unit_price_tax_excl": float(last_line.unit_price_tax_excl or 0),
+                "last_qty": float(last_line.qty_ordered or 0),
+                "ordered_at": last_po.ordered_at.isoformat() if last_po.ordered_at else None,
+                "price_delta_vs_current": (
+                    round(float(item.unit_price_est or 0) - float(last_line.unit_price_tax_excl or 0), 4)
+                    if item.unit_price_est is not None
+                    else None
+                ),
+            }
+        )
+    return history
+
+
 async def load_pr_context(session: AsyncSession, pr_no: str) -> dict[str, Any]:
     pr = await session.scalar(select(t.Pr).where(t.Pr.pr_no == pr_no))
     if pr is None:
@@ -84,10 +164,15 @@ async def load_pr_context(session: AsyncSession, pr_no: str) -> dict[str, Any]:
             t.Budget.fiscal_year == (pr.created_at.year if pr.created_at else 2026),
         )
     )
-    available = 0.0
+    available = Decimal("0")
     if budget is not None:
-        available = _as_float(budget.amount_total) - _as_float(budget.amount_used) - _as_float(budget.amount_committed)
+        available = (
+            Decimal(budget.amount_total) - Decimal(budget.amount_used) - Decimal(budget.amount_committed)
+        ).quantize(Decimal("0.0001"))
     rules = await load_rules_for_category(session, pr.category_code)
+    inventory = await _inventory_checks(session, items)
+    purchase_history = await _purchase_history(session, items)
+    acceptance_points = list(template.acceptance_points or []) if template else []
 
     return {
         "pr": {
@@ -116,7 +201,21 @@ async def load_pr_context(session: AsyncSession, pr_no: str) -> dict[str, Any]:
             }
             for item in items
         ],
-        "budget_available": available,
+        "budget_available": float(available),
+        "budget_id": str(budget.id) if budget is not None else None,
+        "inventory": inventory,
+        "purchase_history": purchase_history,
+        "acceptance": {
+            "points": acceptance_points,
+            "enforced": False,
+            "status": "not_enforced",
+            "note": (
+                "验收条款当前仅从品类模板读取并展示，尚未结构化执行规则；"
+                "需要在验收单/收货环节人工确认。"
+                if acceptance_points
+                else "品类模板未配置验收条款。"
+            ),
+        },
         "template": {
             "category_code": template.category_code,
             "required_slots": list(template.required_slots or []),
@@ -385,6 +484,9 @@ def compose_report(
             "estimated": pr["estimated_amount"],
             "over_budget": pr["estimated_amount"] > context["budget_available"],
         },
+        "inventory": context.get("inventory", []),
+        "purchase_history": context.get("purchase_history", []),
+        "acceptance": context.get("acceptance", {}),
         "requires_review": requires_review,
         "questions": (
             ["请确认补全后的规格与使用人是否正确，确认后将写回 PR 明细。"] if requires_review else []
@@ -474,18 +576,23 @@ async def _finalize(state: PrecheckState, deps: PrecheckDeps) -> dict[str, Any]:
     review_id = UUID(state["review_id"]) if state.get("review_id") else None
 
     async with deps.session_factory() as session:
+        # 锁 run + PR：并发 resume 同一/同一 PR 时串行化
+        run_row = await session.get(t.AgentRun, run_id, with_for_update=True)
+        if run_row is None:
+            raise ValueError(f"运行不存在：{run_id}")
         existing = await session.scalar(
-            select(t.AuditLog.id).where(t.AuditLog.run_id == run_id, t.AuditLog.target_table == "pr_item")
+            select(t.AuditLog.id).where(t.AuditLog.run_id == run_id, t.AuditLog.target_table == "pr")
         )
         if existing is not None:
-            agent_run = await session.get(t.AgentRun, run_id)
-            if agent_run is not None and agent_run.status != "succeeded":
-                agent_run.status = "succeeded"
-                agent_run.finished_at = datetime.now(UTC)
+            if run_row.status != "succeeded":
+                run_row.status = "succeeded"
+                run_row.finished_at = datetime.now(UTC)
                 await session.commit()
             return {"finalized": True, "artifact_id": None}
 
-        pr = await session.scalar(select(t.Pr).where(t.Pr.pr_no == report["pr_no"]))
+        pr = await session.scalar(
+            select(t.Pr).where(t.Pr.pr_no == report["pr_no"]).with_for_update()
+        )
         if pr is None:
             raise ValueError(f"PR 不存在：{report['pr_no']}")
         db_items = (
@@ -526,6 +633,45 @@ async def _finalize(state: PrecheckState, deps: PrecheckDeps) -> dict[str, Any]:
                         )
                     )
             pr.status = "prechecked"
+            session.add(
+                t.AuditLog(
+                    run_id=run_id,
+                    review_id=review_id,
+                    actor_role="buyer",
+                    target_table="pr",
+                    target_id=pr.id,
+                    action="precheck_release",
+                    before_json={"status": "submitted"},
+                    after_json={"status": "prechecked", "applied_patches": applied},
+                    source="agent",
+                    note="M1 放行：预检结论写回（幂等锚点）",
+                )
+            )
+
+            # 预算放行写回：与 finalize 同事务、行锁，避免并发 PR 同时通过预算检查
+            budget_id = state.get("context", {}).get("budget_id")
+            if budget_id:
+                budget_row = await session.get(t.Budget, UUID(budget_id), with_for_update=True)
+                if budget_row is not None:
+                    before_committed = Decimal(budget_row.amount_committed)
+                    committed_after = (
+                        before_committed + Decimal(pr.estimated_amount)
+                    ).quantize(Decimal("0.0001"))
+                    budget_row.amount_committed = committed_after
+                    session.add(
+                        t.AuditLog(
+                            run_id=run_id,
+                            review_id=review_id,
+                            actor_role="buyer",
+                            target_table="budget",
+                            target_id=budget_row.id,
+                            action="commit",
+                            before_json={"amount_committed": float(before_committed)},
+                            after_json={"amount_committed": float(committed_after)},
+                            source="agent",
+                            note="M1 放行：占用预算 amount_committed（Decimal，行锁）",
+                        )
+                    )
         else:
             pr.status = "returned"
             session.add(
@@ -557,10 +703,8 @@ async def _finalize(state: PrecheckState, deps: PrecheckDeps) -> dict[str, Any]:
             },
         )
         session.add(artifact)
-        agent_run = await session.get(t.AgentRun, run_id)
-        if agent_run is not None:
-            agent_run.status = "succeeded"
-            agent_run.finished_at = datetime.now(UTC)
+        run_row.status = "succeeded"
+        run_row.finished_at = datetime.now(UTC)
         await session.commit()
         await session.refresh(artifact)
         artifact_id = str(artifact.id)
@@ -647,5 +791,3 @@ async def compute_precheck_report(session: AsyncSession, pr_no: str) -> dict[str
     findings = evaluate_rule_findings(context, items)
     findings, patches, items = semantic_resolve(context, items, findings)
     return compose_report(context, items, findings, patches)
-
-

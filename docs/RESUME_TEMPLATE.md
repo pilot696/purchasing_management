@@ -24,7 +24,7 @@
 
 · 设计三单行级对齐（精确键/规格桶/语义）+ 匈牙利全局指派 + 五类容差与分批核销状态机（支持同 PO 多发票），
   差异检出 recall 100%（60/60，误报 0）；HITL 中断-恢复、PDF bbox 高亮与审计留痕全链路打通；
-  后端 128 个测试（121 passed / 7 skipped：单测 + DB 集成）、前端 45 单测、4 套真实 HTTP+SSE e2e 冒烟全绿。
+  后端 139 个测试（132 passed / 7 skipped：单测 + DB 集成）、前端 45 单测、4 套真实 HTTP+SSE e2e 冒烟全绿。
 
 · 自写 OpenAI 兼容模型网关（角色路由/跨厂商降级/重试/磁盘 prompt 缓存/结构化输出修复）与可观测体系：
   每次调用落 llm_call（tokens/成本/延迟/缓存）、每节点落 run_event（可回放），每条结论可追溯到规则/证据/人工决策；
@@ -71,7 +71,7 @@
 Python 3.12 · FastAPI · Pydantic v2 · SQLAlchemy 2 async · PostgreSQL 16 · pgvector · Alembic ·
 LangGraph（StateGraph / interrupt / checkpointer）· SSE 断线续传 · HITL · 规则引擎（JSONLogic 白名单）·
 混合检索 + RRF · 匈牙利指派 · PDF 解析（pdfplumber/pypdfium2）· VLM 抽取 · React 19 · TypeScript ·
-Vite · Tailwind 4 · TanStack Query · Docker Compose · Playwright（截图）· LLM 网关与成本记账 · Idempotency-Key / 限流 · 抽取建档。
+Vite · Tailwind 4 · TanStack Query · Docker Compose · Playwright（截图）· LLM 网关与成本记账 · Idempotency-Key / 限流 · 抽取建档 · 合同行三单校验 / 横向比价 / Decimal 账务。
 
 ## 5. 面试口径（必须主动说明，避免被追问翻车）
 

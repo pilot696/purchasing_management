@@ -175,3 +175,27 @@ def test_reconcile_does_not_double_report_amount(dataset: dict) -> None:
     assert "price" in types and "amount" not in types
 
 
+
+
+def test_ambiguous_l3_match_requires_human_before_consumption(dataset: dict) -> None:
+    group = next(g for g in dataset["doc_groups"] if not g["diff_types"])
+    po = _po_for_reconcile(group)
+    invoice = group["invoices"][0]
+    align = align_hungarian(po["lines"], invoice["lines"])
+    assert align.matches, "样本应有可匹配行"
+    align.matches[0].ambiguous = True
+    result = reconcile(
+        po=po,
+        invoice=invoice,
+        align=align,
+        contract=group["contract"],
+        receipts=group["receipts"],
+        policies=policies_from_rows(dataset["master"]["tolerance"]),
+        requires_gr=group["requires_gr"],
+        category_code=group["category_code"],
+    )
+    ambiguous_match = next(m for m in result.line_matches if m.ambiguous)
+    assert ambiguous_match.consumed_qty == 0
+    assert ambiguous_match.status == "ambiguous"
+    assert any(diff.diff_type == "ambiguous_match" for diff in result.diffs)
+    assert result.overall == "hold"

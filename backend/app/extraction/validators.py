@@ -56,6 +56,16 @@ def validate_invoice(invoice: InvoiceExtract) -> list[ValidationIssue]:
                     severity="low",
                 )
             )
+    is_credit_note = bool(invoice.lines) and all(line.qty <= 0 for line in invoice.lines)
+    if is_credit_note:
+        issues.append(
+            ValidationIssue(
+                code="CREDIT_NOTE_DETECTED",
+                message="检测到红冲/负数发票：允许负数数量，但必须人工复核",
+                field="lines",
+                severity="low",
+            )
+        )
     for line in invoice.lines:
         if line.tax_rate is not None and line.tax_rate not in TAX_RATE_WHITELIST:
             issues.append(
@@ -66,11 +76,11 @@ def validate_invoice(invoice: InvoiceExtract) -> list[ValidationIssue]:
                     severity="high",
                 )
             )
-        if line.qty <= 0:
+        if line.qty == 0 or (line.qty < 0 and not is_credit_note):
             issues.append(
                 ValidationIssue(
                     code="QTY_INVALID",
-                    message=f"数量必须为正：{line.qty}",
+                    message=f"数量必须为正（红冲发票除外）：{line.qty}",
                     field=f"lines[{line.line_no}].qty",
                     severity="high",
                 )

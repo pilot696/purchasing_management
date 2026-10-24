@@ -82,15 +82,17 @@ def delivery_score(otd: float | None, avg_delay_days: float = 0.0, partial_ship_
     return clamp(score)
 
 
-def quality_score(qc_pass_rate: float | None, defect_rate: float | None, rework_rate: float | None = None) -> float:
+def quality_score(qc_pass_rate: float | None, defect_rate: float | None = None) -> float:
+    """质量分：以收货行 QC 通过率为唯一独立信号。
+
+    旧公式 60*p + 40*(1-defects) 在 defects = 1-p 时恒等于 100p，
+    所谓“40% 缺陷权重”并不存在；这里明确为 100*p，避免误导性公式。
+    defect_rate 参数保留兼容，但不再二次惩罚（它以 qc_pass_rate 为来源）。
+    """
     if qc_pass_rate is None and defect_rate is None:
         return 60.0
-    pass_rate = qc_pass_rate if qc_pass_rate is not None else 1.0
-    defects = defect_rate if defect_rate is not None else 0.0
-    score = 60.0 * pass_rate + 40.0 * (1.0 - defects)
-    if rework_rate:
-        score -= 10.0 * rework_rate
-    return clamp(score)
+    pass_rate = qc_pass_rate if qc_pass_rate is not None else 1.0 - (defect_rate or 0.0)
+    return clamp(100.0 * pass_rate)
 
 
 def _first_response_points(hours: float) -> float:
@@ -251,16 +253,18 @@ def evaluate_gates(
     cert_ids = [str(cert.get("cert_no") or cert.get("id") or "") for cert in certs]
     license_expiry = _to_date(business_license.get("valid_to")) if business_license else None
 
-    if status == "blacklisted":
-        add("G3_DISHONEST", "供应商在内部黑名单中，禁止准入", cert_ids[:2])
+    if status == "blacklisted" or risk_flags.get("dishonest_judgment"):
+        add(
+            "G3_DISHONEST",
+            "供应商在内部黑名单中，禁止准入" if status == "blacklisted" else "失信被执行人/严重违法失信记录",
+            cert_ids[:2],
+        )
     if risk_flags.get("license_invalid") or (license_expiry is not None and license_expiry < today):
         add(
             "G1_LICENSE_INVALID",
             "营业执照失效或经营异常",
             [str(business_license.get("cert_no") or "")] if business_license else [],
         )
-    if risk_flags.get("dishonest_judgment"):
-        add("G3_DISHONEST", "失信被执行人/严重违法失信记录", cert_ids[:2])
     if risk_flags.get("major_default"):
         add("G4_DEFAULT", "近 12 个月存在重大质量事故或单方违约", cert_ids[:2])
     if risk_flags.get("tax_abnormal"):

@@ -41,8 +41,12 @@ async def lexical_search(
     *,
     category_code: str | None = None,
     limit: int = 20,
+    min_similarity: float = 0.05,
 ) -> list[dict[str, Any]]:
-    """pg_trgm 词法检索：中文短名用 similarity 排序（无需 zhparser）。"""
+    """pg_trgm 词法检索：中文短名用 similarity 排序（无需 zhparser）。
+
+    min_similarity 过滤纯噪声：相似度 ~0.01 的候选不进入 RRF 融合。
+    """
     category_clause = "AND category_code = :category" if category_code else ""
     sql = text(
         f"""
@@ -50,6 +54,7 @@ async def lexical_search(
                similarity(lower(name), lower(:query)) AS lex_score
         FROM sku_catalog
         WHERE TRUE {category_clause}
+          AND similarity(lower(name), lower(:query)) >= :min_similarity
         ORDER BY lex_score DESC, sku_code
         LIMIT :limit
         """
@@ -57,7 +62,12 @@ async def lexical_search(
     rows = (
         await session.execute(
             sql,
-            {"query": query_text, "category": category_code, "limit": limit},
+            {
+                "query": query_text,
+                "category": category_code,
+                "limit": limit,
+                "min_similarity": min_similarity,
+            },
         )
     ).mappings()
     return [

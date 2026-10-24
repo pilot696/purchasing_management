@@ -11,6 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import SessionDep
 from app.core.errors import AppError
@@ -232,7 +233,15 @@ async def upload_document(
         linked_id=linked_id,
     )
     session.add(doc)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # 并发上传同一 sha：唯一约束兜底，回滚后返回已存在文档
+        await session.rollback()
+        existing = await session.scalar(select(t.Doc).where(t.Doc.sha256 == sha))
+        if existing is not None:
+            return {**_doc_meta(existing), "duplicate": True}
+        raise
     await session.refresh(doc)
     return {**_doc_meta(doc), "duplicate": False}
 

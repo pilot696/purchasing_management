@@ -129,3 +129,32 @@ async def test_scanned_needs_vlm(dataset: dict) -> None:
     assert "vlm_required" in result.needs_review_fields
     assert result.route.kind == "scanned"
 
+
+
+def test_real_invoice_number_and_amount_variants() -> None:
+    from app.extraction.pdf_native import _extract_invoice_amounts, _extract_invoice_no
+
+    text = "发票号码：24312000000012345678\n金额（未税） ￥5,100.03\n税额 ￥663.00\n价税合计（小写）￥5,763.03"
+    assert _extract_invoice_no(text) == "24312000000012345678"
+    amounts = _extract_invoice_amounts(text)
+    assert amounts == {
+        "amount_tax_excl": "5,100.03",
+        "tax_amount": "663.00",
+        "amount_tax_incl": "5,763.03",
+    }
+
+
+def test_credit_note_negative_qty_is_allowed_with_review_flag() -> None:
+    from app.extraction.validators import validate_invoice
+    from app.schemas.extraction import DocLine
+
+    invoice = InvoiceExtract(
+        invoice_no="INV-2026-0001",
+        amount_tax_excl=-100,
+        tax_amount=-13,
+        amount_tax_incl=-113,
+        lines=[DocLine(line_no=1, item_desc="红冲测试", qty=-1, amount_tax_excl=-100, tax_rate=0.13)],
+    )
+    codes = {issue.code for issue in validate_invoice(invoice)}
+    assert "CREDIT_NOTE_DETECTED" in codes
+    assert "QTY_INVALID" not in codes

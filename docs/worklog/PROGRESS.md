@@ -378,3 +378,11 @@
 - **文档**：Spec v1.17（endpoints/幂等/限流/changelog）、README/EVAL_REPORT/RESUME、latest.json 工程数字。
 - **验证**：后端 **128 个测试（121 passed / 7 skipped**：单测 92/3、集成 29/4）；前端 **45 passed** + typecheck；build **391.96KB / gzip 117.51KB**；7 张截图用最新 UI 重拍（M2 目录、M3 上传/多发票/建档入口）。
 - **下一步 (Next)**：embedding dense leg、M2 专家 gold、生产化鉴权/Postgres checkpointer/P95 压测。
+
+### [2026-10-24 12:35] v1.18 审查驱动修复：财务正确性 + 三单/比价/预检缺口 + P2 细节
+- **P0 财务**：`agents/matching.py` finalize 改 Decimal（`_qty/_money`，按 DB 精度 quantize）、run 行 `FOR UPDATE`；`agents/supplier.py` / `agents/precheck.py` finalize 同步加 run 锁；M1 放行同事务锁 budget 行写 `amount_committed`，新增 `precheck_release` 审计锚点（修复无补丁时重复占预算风险）。
+- **P1 业务**：`matching/contract.py` + `matching.py` 装载 `ContractLine`，新增 contract_price/qty/amount/delivery 差异；`seed/quotes.py` + `scripts/seed_quotes.py` + `api/v1/quotes.py` 横向比价（360 quotes/360 lines，账期资金占用年化 8%），Supplier 页表格；`precheck.py` 增加库存可用量/历史 PO 成交价/验收条款状态，Precheck 页展示。
+- **P2 细节**：quality_score 去冗余缺陷项、G3 去重、规则除零包 RuleEvalError、L3 ambiguous 不核销、上传/建档并发 IntegrityError 兜底、红冲负数、词法 min_similarity、LLM dropped refs 写回 report+UI、真实发票号/金额正则变体。
+- **GitNexus**：`detect-changes --scope all` 显示 29 files / 72 symbols / 72 processes，risk=critical（跨 M1/M2/M3/抽取/种子/API，已用 139 测试 + 4 套 e2e 验证）。
+- **验证**：后端 **139 个（132 passed / 7 skipped**：单测 101/3、集成 31/4）；前端 45 + typecheck/build（398.09KB / gzip 119.25KB）；SMOKE_M1/M2/M3/E2E=OK；横向比价 3 家报价返回。
+- **下一步 (Next)**：真实票据人工 gold、M2 专家 gold、embedding leg、生产鉴权/checkpointer/P95。

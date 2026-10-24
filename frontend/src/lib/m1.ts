@@ -59,6 +59,26 @@ export interface M1Report {
   patches: M1Patch[];
   items: M1Item[];
   budget?: { available: number; estimated: number; over_budget: boolean };
+  inventory?: Array<{
+    line_no: number;
+    item_name: string;
+    qty_required: number;
+    qty_on_hand: number;
+    qty_reserved: number;
+    qty_available: number;
+    coverage: number;
+    suggestion: string;
+  }>;
+  purchase_history?: Array<{
+    line_no: number;
+    item_name: string;
+    last_po_no: string;
+    last_unit_price_tax_excl: number;
+    last_qty: number;
+    ordered_at: string | null;
+    price_delta_vs_current: number | null;
+  }>;
+  acceptance?: { points: string[]; enforced: boolean; status: string; note: string };
   summary?: string;
   requires_review?: boolean;
   questions?: string[];
@@ -128,6 +148,9 @@ export function asM1Report(value: unknown): M1Report | null {
     patches: Array.isArray(candidate.patches) ? candidate.patches : [],
     items: Array.isArray(candidate.items) ? candidate.items : [],
     budget: candidate.budget,
+    inventory: candidate.inventory,
+    purchase_history: candidate.purchase_history,
+    acceptance: candidate.acceptance,
     summary: candidate.summary,
     requires_review: candidate.requires_review,
     questions: candidate.questions,

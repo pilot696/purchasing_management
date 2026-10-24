@@ -14,7 +14,7 @@ import copy
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from time import perf_counter
 from typing import Any, TypedDict
 from uuid import UUID
@@ -25,6 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.matching.align import AlignResult, LineMatch, align_hungarian
+from app.matching.contract import check_contract
 from app.matching.normalize import normalize
 from app.matching.tolerance import Diff, policies_from_rows, reconcile
 from app.models import tables as t
@@ -71,6 +72,16 @@ def _as_float(value: Any) -> float:
     if value is None:
         return 0.0
     return float(value)
+
+
+def _qty(value: Any) -> Decimal:
+    """会计数量统一 Decimal（DB 为 Numeric(12,2)），禁止 float 参与累加。"""
+    return Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _money(value: Any) -> Decimal:
+    """金额统一 Decimal（DB 为 Numeric(18,4)）。"""
+    return Decimal(str(value or 0)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
 
 def _as_date_str(value: Any) -> str | None:
@@ -217,18 +228,38 @@ async def load_subject(state: MatchingState, deps: MatchingDeps) -> dict[str, An
 
         contract_payload = None
         if contract is not None:
+            contract_lines = (
+                await session.scalars(
+                    select(t.ContractLine)
+                    .where(t.ContractLine.contract_id == contract.id)
+                    .order_by(t.ContractLine.line_no)
+                )
+            ).all()
             contract_payload = {
                 "contract_id": str(contract.id),
                 "contract_no": contract.contract_no,
                 "total_amount": _as_float(contract.total_amount),
                 "payment_terms": contract.payment_terms or {},
                 "delivery_terms": contract.delivery_terms or {},
+                "lines": [
+                    {
+                        "line_no": line.line_no,
+                        "item_desc": line.item_desc,
+                        "spec_bucket": line.spec_bucket,
+                        "qty": _as_float(line.qty),
+                        "unit_price_tax_excl": _as_float(line.unit_price_tax_excl),
+                        "tax_rate": _as_float(line.tax_rate),
+                        "amount_tax_excl": _as_float(line.amount_tax_excl),
+                    }
+                    for line in contract_lines
+                ],
             }
 
         po_payload = {
             "po_id": str(po.id),
             "po_no": po.po_no,
             "status": po.status,
+            "ordered_at": po.ordered_at.isoformat() if po.ordered_at else None,
             "total_amount_tax_incl": _as_float(po.total_amount_tax_incl),
             "lines": [
                 {
@@ -441,6 +472,36 @@ def reconcile_document(state: MatchingState, deps: MatchingDeps) -> dict[str, An
         for payload in results
         for diff in payload["diffs"]
     ]
+
+    # 三单补齐：合同行 vs PO/发票（避免每个 invoice 重复跑 PO 检查）
+    contract = state.get("contract")
+    contract_diffs: list[dict[str, Any]] = []
+    if contract and contract.get("lines"):
+        po_only = check_contract(contract=contract, po=po, invoice=None, category_code=state.get("category_code"))
+        first = invoices[0] if invoices else None
+        for diff in po_only:
+            contract_diffs.append(
+                {
+                    **diff,
+                    "invoice_no": first["invoice_no"] if first else None,
+                    "invoice_id": first["invoice_id"] if first else None,
+                }
+            )
+        for invoice in invoices:
+            invoice_only = check_contract(
+                contract=contract,
+                po={"lines": [], "total_amount_tax_incl": 0},
+                invoice=invoice,
+                category_code=state.get("category_code"),
+            )
+            for diff in invoice_only:
+                contract_diffs.append({**diff, "invoice_no": invoice["invoice_no"], "invoice_id": invoice["invoice_id"]})
+    if contract_diffs:
+        diffs.extend(contract_diffs)
+        if any(diff["severity"] == "high" for diff in contract_diffs):
+            overall = "hold"
+        elif rank.get(overall, 1) < rank["release_with_note"]:
+            overall = "release_with_note"
     line_matches = [
         {**match, "invoice_no": payload["invoice_no"], "invoice_id": payload["invoice_id"]}
         for payload in results
@@ -576,6 +637,10 @@ async def _finalize(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
     default_invoice_no = invoices[0]["invoice_no"]
 
     async with deps.session_factory() as session:
+        # 先锁 run 行：两个 worker 并发 resume 同一 run 时串行化，审计查重才真正原子
+        run_row = await session.get(t.AgentRun, run_id, with_for_update=True)
+        if run_row is None:
+            raise ValueError(f"运行不存在：{run_id}")
         # 幂等：同一 run 的 finalize 重入不重复核销（以 match_run 审计记录为准）
         existing = await session.scalar(
             select(t.AuditLog.id).where(
@@ -584,10 +649,9 @@ async def _finalize(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
             )
         )
         if existing is not None:
-            agent_run = await session.get(t.AgentRun, run_id)
-            if agent_run is not None and agent_run.status != "succeeded":
-                agent_run.status = "succeeded"
-                agent_run.finished_at = datetime.now(UTC)
+            if run_row.status != "succeeded":
+                run_row.status = "succeeded"
+                run_row.finished_at = datetime.now(UTC)
                 await session.commit()
             return {"finalized": True, "artifact_id": None}
 
@@ -651,13 +715,14 @@ async def _finalize(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
             "invoices": [payload["invoice_no"] for payload in invoices],
         }
         if release:
-            consumed_by_po: dict[int, float] = {}
+            consumed_by_po: dict[int, Decimal] = {}
             for match in result["line_matches"]:
                 if match.get("invoice_line_no") is None or not match.get("consumed_qty"):
                     continue
-                consumed_by_po[match["po_line_no"]] = consumed_by_po.get(
-                    match["po_line_no"], 0.0
-                ) + float(match["consumed_qty"])
+                qty = _qty(match.get("consumed_qty"))
+                if qty <= 0:
+                    continue
+                consumed_by_po[match["po_line_no"]] = consumed_by_po.get(match["po_line_no"], Decimal("0")) + qty
             for po_line_no, consumed in consumed_by_po.items():
                 po_line = po_lines.get(po_line_no)
                 if po_line is None or consumed <= 0:
@@ -665,11 +730,12 @@ async def _finalize(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
                 row = await session.get(t.PoLine, UUID(po_line["line_id"]))
                 if row is None:
                     continue
-                before = _as_float(row.qty_invoiced)
-                row.qty_invoiced = Decimal(str(before + consumed))
+                before = Decimal(row.qty_invoiced)
+                after = (before + consumed).quantize(Decimal("0.01"))
+                row.qty_invoiced = after
                 audit_after[f"po_line:{po_line_no}"] = {
-                    "qty_invoiced_before": before,
-                    "qty_invoiced_after": float(row.qty_invoiced),
+                    "qty_invoiced_before": float(before),
+                    "qty_invoiced_after": float(after),
                 }
                 session.add(
                     t.AuditLog(
@@ -679,10 +745,10 @@ async def _finalize(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
                         target_table="po_line",
                         target_id=row.id,
                         action="update",
-                        before_json={"qty_invoiced": before},
-                        after_json={"qty_invoiced": float(row.qty_invoiced)},
+                        before_json={"qty_invoiced": float(before)},
+                        after_json={"qty_invoiced": float(after)},
                         source="agent",
-                        note="M3 放行：累加已开票数量",
+                        note="M3 放行：累加已开票数量（Decimal）",
                     )
                 )
 
@@ -690,17 +756,18 @@ async def _finalize(state: MatchingState, deps: MatchingDeps) -> dict[str, Any]:
                 invoice_row = await session.get(t.Invoice, UUID(payload["invoice_id"]))
                 if invoice_row is not None:
                     invoice_row.status = "matched"
-            if abs(result["proposed_tail"]) >= 0.005:
+            tail = _money(result["proposed_tail"])
+            if abs(tail) >= Decimal("0.005"):
                 pool = await session.scalar(select(t.TailDiffPool).where(t.TailDiffPool.po_id == UUID(state["po_id"])))
                 if pool is None:
                     session.add(
                         t.TailDiffPool(
                             po_id=UUID(state["po_id"]),
-                            amount=Decimal(str(result["proposed_tail"])),
+                            amount=tail,
                         )
                     )
                 else:
-                    pool.amount = Decimal(str(_as_float(pool.amount) + float(result["proposed_tail"])))
+                    pool.amount = (Decimal(pool.amount) + tail).quantize(Decimal("0.0001"))
         else:
             for payload in invoices:
                 invoice_row = await session.get(t.Invoice, UUID(payload["invoice_id"]))

@@ -331,16 +331,16 @@
   },
   "engineering": {
     "backend_unit": {
-      "passed": 92,
+      "passed": 101,
       "skipped": 3
     },
     "backend_integration": {
-      "passed": 29,
+      "passed": 31,
       "skipped": 4
     },
     "frontend_unit": 45,
-    "frontend_build_kb": 391.96,
-    "frontend_build_gzip_kb": 117.51,
+    "frontend_build_kb": 398.09,
+    "frontend_build_gzip_kb": 119.25,
     "screenshots": 7,
     "e2e_smokes": [
       "SMOKE_M1=OK",
@@ -348,7 +348,11 @@
       "SMOKE_M3=OK",
       "SMOKE_M3_MULTI=OK",
       "SMOKE_E2E=OK"
-    ]
+    ],
+    "backend_total": {
+      "passed": 132,
+      "skipped": 7
+    }
   },
   "real_llm_smoke": {
     "provider": "opencode-go",

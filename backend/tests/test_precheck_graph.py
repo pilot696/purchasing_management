@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -219,3 +220,58 @@ async def test_precheck_edits_selects_and_edits_patch() -> None:
         apply_logs = [row for row in audits if row.action == "apply_patch"]
         assert len(apply_logs) == 1
         assert len(apply_logs[0].patch_json or []) == 1
+
+
+
+async def test_precheck_release_commits_budget_once() -> None:
+    """放行时预算 amount_committed 必须在 finalize 同事务写回，且重复 finalize 不重复占用。"""
+    await _seeded()
+    async with get_session_factory()() as session:
+        pr = await session.scalar(select(t.Pr).where(t.Pr.status == "submitted").limit(1))
+    if pr is None:
+        pytest.skip("没有 submitted PR（需 reseed）")
+    subject = {"pr_no": pr.pr_no}
+    run_id = await _create_run(subject)
+    graph = build_precheck_graph(_deps())
+    config = {"configurable": {"thread_id": str(run_id)}}
+    await graph.ainvoke({"run_id": str(run_id), "subject": subject}, config)
+
+    async with get_session_factory()() as session:
+        pr_row = await session.scalar(select(t.Pr).where(t.Pr.pr_no == pr.pr_no))
+        budget = await session.scalar(
+            select(t.Budget).where(
+                t.Budget.department_id == pr_row.department_id,
+                t.Budget.category_code == pr_row.category_code,
+                t.Budget.fiscal_year == (pr_row.created_at.year if pr_row.created_at else 2026),
+            )
+        )
+        if budget is None:
+            pytest.skip("该 PR 没有预算行")
+        before = Decimal(budget.amount_committed)
+        estimated = Decimal(pr_row.estimated_amount)
+
+    await graph.aupdate_state(config, {"decision": "accept", "reviewer_note": "budget test", "review_id": None})
+    await graph.ainvoke(None, config)
+
+    async with get_session_factory()() as session:
+        budget = await session.scalar(
+            select(t.Budget).where(
+                t.Budget.department_id == pr.department_id,
+                t.Budget.category_code == pr.category_code,
+                t.Budget.fiscal_year == (pr.created_at.year if pr.created_at else 2026),
+            )
+        )
+        assert budget is not None and budget.amount_committed == (before + estimated).quantize(before)
+
+    # 重复 finalize 应幂等（不重复占预算）
+    await graph.aupdate_state(config, {"decision": "accept", "reviewer_note": "repeat", "review_id": None})
+    await graph.ainvoke(None, config)
+    async with get_session_factory()() as session:
+        budget = await session.scalar(
+            select(t.Budget).where(
+                t.Budget.department_id == pr.department_id,
+                t.Budget.category_code == pr.category_code,
+                t.Budget.fiscal_year == (pr.created_at.year if pr.created_at else 2026),
+            )
+        )
+        assert budget is not None and budget.amount_committed == (before + estimated).quantize(before)

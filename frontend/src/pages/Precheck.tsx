@@ -246,6 +246,65 @@ export default function Precheck() {
             {report.summary && <p className="mt-2 text-[12px] text-[var(--text-muted)]">{report.summary}</p>}
           </section>
 
+          {(report.inventory?.length || report.purchase_history?.length || report.acceptance) && (
+            <section className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4">
+              <h2 className="text-sm font-semibold">库存 / 历史采购 / 验收条款</h2>
+              <div className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-3">
+                <div>
+                  <h3 className="text-[12px] font-medium text-[var(--text-secondary)]">库存可用量</h3>
+                  {report.inventory?.length ? (
+                    <ul className="mt-2 space-y-1 text-[12px] text-[var(--text-secondary)]">
+                      {report.inventory.map((item) => (
+                        <li key={item.line_no}>
+                          第 {item.line_no} 行 · 需求 {item.qty_required} · 现货 {item.qty_on_hand} / 预留{" "}
+                          {item.qty_reserved} · 可用 <b>{item.qty_available}</b>
+                          <div className="text-[11px] text-[var(--text-muted)]">{item.suggestion}</div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-[11px] text-[var(--text-muted)]">无匹配库存记录（按采购流程执行）。</p>
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-[12px] font-medium text-[var(--text-secondary)]">历史采购对照</h3>
+                  {report.purchase_history?.length ? (
+                    <ul className="mt-2 space-y-1 text-[12px] text-[var(--text-secondary)]">
+                      {report.purchase_history.map((item) => (
+                        <li key={item.line_no}>
+                          第 {item.line_no} 行 · 上次 {item.last_po_no} · 单价 ¥{item.last_unit_price_tax_excl}
+                          {item.price_delta_vs_current !== null && (
+                            <span className={item.price_delta_vs_current > 0 ? "text-[var(--semantic-danger)]" : ""}>
+                              {" "}
+                              · 与本次预估差 {item.price_delta_vs_current}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-[11px] text-[var(--text-muted)]">无历史采购记录。</p>
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-[12px] font-medium text-[var(--text-secondary)]">验收条款</h3>
+                  {report.acceptance?.points.length ? (
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-[12px] text-[var(--text-secondary)]">
+                      {report.acceptance.points.map((point) => (
+                        <li key={point}>{point}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-[11px] text-[var(--text-muted)]">品类模板未配置验收条款。</p>
+                  )}
+                  {report.acceptance?.note && (
+                    <p className="mt-2 text-[11px] text-[var(--semantic-warning)]">{report.acceptance.note}</p>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
+
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <div className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-surface)] p-4">
               <h2 className="text-sm font-semibold">申请明细与检索候选</h2>

@@ -185,3 +185,22 @@ def test_clamp() -> None:
     assert clamp(150) == 100.0
     assert clamp(-5) == 0.0
     assert clamp(42) == 42.0
+
+
+def test_quality_score_does_not_double_count_redundant_defect_rate() -> None:
+    # 上游 defect_rate = 1 - qc_pass_rate，旧公式 60p+40(1-d) 会退化为 100p
+    assert quality_score(0.8, 0.2) == quality_score(0.8, None) == 80.0
+    assert quality_score(1.0, 0.0) == 100.0
+
+
+def test_blacklisted_and_dishonest_do_not_duplicate_g3() -> None:
+    certs = [{"cert_type": "营业执照", "cert_no": "X", "valid_to": "2099-01-01"}]
+    hits = evaluate_gates(
+        risk_flags={"dishonest_judgment": True},
+        status="blacklisted",
+        certs=certs,
+        target_category=None,
+        category_scope=[],
+    )
+    g3 = [hit for hit in hits if hit["code"] == "G3_DISHONEST"]
+    assert len(g3) == 1

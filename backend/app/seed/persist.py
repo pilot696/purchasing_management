@@ -23,6 +23,7 @@ from app.db.session import get_session_factory
 from app.models import tables as t
 from app.seed.config import PROJECT_ROOT, SeedConfig
 from app.seed.degrade import degrade_pdf
+from app.seed.quotes import generate_quotes
 from app.seed.render import render_contract, render_invoice, render_po
 
 TRUNCATE_SQL = text(
@@ -530,6 +531,8 @@ async def persist_dataset(dataset: dict[str, Any], cfg: SeedConfig) -> dict[str,
         await _insert(session, t.Invoice, invoice_rows)
         await _insert(session, t.InvoiceLine, invoice_line_rows)
 
+        # 多供应商报价（M2 横向比价）：基于已插入的 PR/供应商生成
+        await generate_quotes(session)
         await session.commit()
 
     # ---------- gold ----------

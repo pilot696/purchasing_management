@@ -1,7 +1,7 @@
 # 企业通用间接采购智能管理与风控系统 — PRD & Agent Spec
 
 > **Procurement AI Agent Workbench**｜全栈 + Multi-Agent 工程级需求与技术架构说明书
-> 版本：v1.17（上传抽取建档 + Idempotency-Key/限流 + M2 评分口径修正）｜日期：2026-10-24｜目标岗位：AI 应用 / Agent 开发工程师
+> 版本：v1.18（正确性修复：Decimal 账务 / finalize 行锁 / 预算 committed / 合同行三单 / 横向比价 / 预检库存历史）｜日期：2026-10-24｜目标岗位：AI 应用 / Agent 开发工程师
 > 本文档是开发与 pen.dev 画布设计的**唯一事实来源**。任何实现偏离需在 §13 变更记录中登记。
 
 ---
@@ -1907,6 +1907,7 @@ queued ──► running ──► awaiting_review ──► running ──► s
 | GET | `/tolerances?category=` | 容差表 |
 | GET | `/suppliers?q=&status=&limit=&offset=` / `/suppliers/{code}` | 供应商目录/详情 + 评估历史 |
 | GET | `/metrics/overview` | 运行/成本/缓存/待复核聚合（兼容别名，与 `/observability/summary` 同源） |
+| GET | `/quotes/comparables?pr_no=&annual_rate=` | 同一 PR 多供应商报价，按账期资金占用调整后排序 |
 | GET | `/skus/search?q=&category=` | SKU 检索（预检候选/演示） |
 | GET | `/benchmarks?bucket=&category=` | 价格基准（前端展示分布） |
 | GET | `/meta/enums` | 枚举字典（前后端共用） |
@@ -2544,6 +2545,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-24 | v1.15 | W4 收尾：HITL `edits` 全链路（M1 勾选/改值、审计只记实际应用集合）；`GET /suppliers` 目录/详情/趋势 + `GET /reviews/{id}` + `/metrics/overview`；`POST /documents/upload`（sha256 去重/关联）；M3 多发票顺序核销（≤20 张、`invoices[]`/`multi_invoice`、finalize 聚合 qty_invoiced 与全部 invoice.status）；CI + requirements 锁定 + eval_report 聚合脚本 | W4 收尾实现 |
 | 2026-10-24 | v1.16 | 真实模型全量评测：M2 真实网关 30 家（23 ok / 7 闸门跳过 / 0 失败，522s，¥0.391；max_tokens 8192 + 截断检测修复）、扫描件 VLM 24/24 成功（12 合同 + 12 发票，发票 3 字段 100%，p50 35.7s，¥2.89）；`m2_eval --real-llm` / `extract_eval --vision` 配置化；`evals/latest.json` 增加 m2_real / extraction_vision | 真实评测回填 |
 | 2026-10-24 | v1.17 | 上传建档：`POST /documents/upload` + `POST /documents/{id}/ingest`（发票 Invoice+InvoiceLine、供应商匹配、幂等/409）；Idempotency-Key（`/runs`/`/resume`/`/decision`）与演示限流；M2 评分口径增加 `mean_scored`；M3 页面一键抽取建档；测试 128 个（121 passed / 7 skipped） | 上传闭环 + 防重 |
+| 2026-10-24 | v1.18 | 审查驱动修复：M3 finalize Decimal/行锁/预算 committed；ContractLine 三单差异 + M2 横向比价 + M1 库存/历史/验收；quality/G3/除零/ambiguous/TOCTOU/红冲/词法/LLM dropped/真实发票正则；测试 139 个（132 passed / 7 skipped） | 正确性 + 需求覆盖 |
 
 ---
 

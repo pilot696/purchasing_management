@@ -12,6 +12,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
@@ -145,7 +146,16 @@ async def ingest_invoice(
     if payload.po_no:
         warnings.append(f"发票备注关联 PO {payload.po_no}，M3 匹配时请填写该 PO 号")
 
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # 并发建档同一发票号：唯一约束兜底，返回 409 而不是 500
+        await session.rollback()
+        existing = await session.scalar(select(t.Invoice).where(t.Invoice.invoice_no == invoice_no).limit(1))
+        raise InvoiceConflict(
+            "并发建档冲突：发票号已存在",
+            details={"invoice_no": invoice_no, "invoice_id": str(existing.id) if existing else None},
+        ) from None
     await session.refresh(invoice)
     return _invoice_result(
         invoice,

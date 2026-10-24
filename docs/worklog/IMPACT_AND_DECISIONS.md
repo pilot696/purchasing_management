@@ -253,3 +253,9 @@
 - **同步更新 Spec**：无。
 
 <!-- 追加位置：新 ADR 写在本行上方 -->
+
+## ADR-023｜审查驱动修复的影响面（2026-10-24）
+- **触发原因**：外部审查指出 P0 财务正确性、P1 需求覆盖与 P2 细节缺陷。
+- **GitNexus impact/detect_changes**：29 files / 72 symbols / 72 execution flows，risk=critical；核心波及 `M1 finalize / precheck 规则节点`、`M2 finalize / scoring`、`M3 load/reconcile/finalize`、`extraction PDF/validators`、`seed persist`、`API routes`。
+- **最终方案**：finalize 行锁 + Decimal；M1 预算 committed 同事务；M3 ContractLine 差异；M2 横向比价；M1 库存/历史/验收；P2 细节修复；文档 v1.18、测试 139、e2e 4 套全绿。
+- **同步章节**：Spec v1.18（endpoints/changelog）；README 状态；EVAL_REPORT §9；RESUME 数字；GOTCHAS G-058~G-061。
