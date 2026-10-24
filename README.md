@@ -13,7 +13,7 @@
 
 **已验证**（2026-10-24，seed=42；确定性基线离线，M2 另跑真实网关全量）：
 
-- 后端单测 **91 passed / 3 skipped**；DB 集成测试 **28 passed / 3 skipped**；前端单测 **45 passed**；`tsc` + `vite build` 通过（390.71KB / gzip 117.20KB）。
+- 后端测试 **121 个（114 passed / 7 skipped**：单测 90/3、DB 集成 24/4）；前端单测 **45 passed**；`tsc` + `vite build` 通过（390.71KB / gzip 117.20KB）。
 - 真实 e2e 冒烟全绿：`SMOKE_M1=OK`（needs_info + 补丁写回）、`SMOKE_M2=OK`（SUP-001 approve 94.43）、
   `SMOKE_M3=OK`（overall=hold + PDF 注释 + 财务放行）、`SMOKE_E2E=OK`（SSE/中断/恢复契约）。
 - **真实模型已接**：OpenCode Go（OpenAI 兼容）跑通 M2 LLM 复核闭环（deepseek-v4.1-flash，单次 tokens 1658→2662、
@@ -21,6 +21,9 @@
 - **M2 全量真实基线**（30 家）：真实 LLM **23 家 ok / 7 家闸门跳过 / 0 失败**，耗时 **522s（8.7min）**，
   按缓存 usage 估算 **35,386 in / 82,960 out tokens、¥0.391**；闸门检出 **100%**、误报 **0%**、冷启动一致 **12/12**、
   flip_rate **5.99%**；20 家 LLM 复核成功里含 2 家首次输出被截断、修复 max_tokens 后通过。
+- **扫描件 VLM 真实基线**（百炼 qwen3.8-max）：24/24 份扫描件全部抽取成功（12 合同 + 12 发票，0 needs_review/0 失败）；
+  发票号 / 价税合计 / 销方名称 **100%**（n=12）；延迟 p50 **35.7s** / p95 **49.3s**；
+  24 份共 31 次调用（含 repair）**94,107 in / 36,486 out tokens、估算 ¥2.89**。
 - 基线：M3 行对齐 F1 **1.0** / 差异 F1 **1.0**（80 组）；M1 verdict **100%** / 检索 top-1 **100%**（120/105）；
   M2 闸门检出 **100%** / 误报 **0%** / 冷启动一致 **100%**（30 家离线 + 23 家真实）；详见 [EVAL_REPORT.md](docs/EVAL_REPORT.md)。
 - 部署资产：多阶段 `Dockerfile`（Node 构建前端 → Python 运行时同端口托管 SPA + API）、`docker compose up -d --build`
@@ -29,9 +32,9 @@
   由 `scripts/gen_design_pen.py` 与 `tokens.css` 三处同源生成（D13：设计 only，代码 UI 手写）。
 - 简历数字：Spec §12 占位符已按实测回填；[RESUME_TEMPLATE.md](docs/RESUME_TEMPLATE.md) 提供匿名模板 + STAR 口径。
 
-**仍未测/待接入**（不写进数字）：扫描件 VLM 字段准确率（百炼 key 已配置，待跑 `extract_eval --vision`）、
-向量检索 leg（dense 代码未实现，ADR-020）、M2 专家标注 gold（维度 MAE/κ）、M1/M3 真实模型基线（这两套本身确定性）、
-端到端 P95 压测。全部记录在 [EVAL_REPORT.md §7](docs/EVAL_REPORT.md)。
+**仍未测/待接入**（不写进数字）：向量检索 leg（dense 代码未实现，ADR-020）、M2 专家标注 gold（维度 MAE/κ）、
+M1/M3 真实模型基线（这两套本身确定性）、端到端 P95 压测；扫描件 VLM 已测（见上），但合同/PO 只有"成功抽取"、
+没有逐字段 gold，且 VLM 未输出 bbox（扫描件 PDF 暂无高亮）。全部记录在 [EVAL_REPORT.md §7](docs/EVAL_REPORT.md)。
 
 M3 抽取管线（W1 第 2~3 步）已完成：`DocumentRouter`（文本层占比 + 模板锚点分流）、`pdf_native`
 （表格结构优先、正则兜底，产出 Pydantic 模型 + 归一化 bbox）、确定性校验器（算术/税率/日期/数量）、

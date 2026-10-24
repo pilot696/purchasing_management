@@ -37,6 +37,40 @@ def _annotations_from_payload(payload: dict[str, Any]) -> list[Annotation]:
     return annotations
 
 
+def _normalize_tax_rate(value: Any) -> Any:
+    """VLM 常把 13% 写成 13；统一成小数（0.13），避免校验器误报。"""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip().rstrip("%").strip()
+        try:
+            number = float(text)
+        except ValueError:
+            return value
+    elif isinstance(value, (int, float)):
+        number = float(value)
+    else:
+        return value
+    if number > 1:
+        number = number / 100
+    return round(number, 6)
+
+
+def _normalize_vision_payload(doc_type: DocType, payload: dict[str, Any]) -> dict[str, Any]:
+    data = dict(payload)
+    if doc_type == "invoice" and isinstance(data.get("tax_rates"), list):
+        data["tax_rates"] = [_normalize_tax_rate(value) for value in data["tax_rates"]]
+    lines = data.get("lines")
+    if isinstance(lines, list):
+        normalized_lines = []
+        for line in lines:
+            if isinstance(line, dict) and line.get("tax_rate") is not None:
+                line = {**line, "tax_rate": _normalize_tax_rate(line["tax_rate"])}
+            normalized_lines.append(line)
+        data["lines"] = normalized_lines
+    return data
+
+
 async def _extract_with_vision(
     pdf_bytes: bytes,
     doc_type: DocType,
@@ -79,13 +113,14 @@ async def _extract_with_vision(
             needs_review_fields=["*"],
         )
 
-    model = SCHEMAS[doc_type].model_validate(outcome.payload)
+    data = _normalize_vision_payload(doc_type, outcome.payload)
+    model = SCHEMAS[doc_type].model_validate(data)
     issues = VALIDATORS[doc_type](model)
     needs_review = sorted({issue.field for issue in issues if issue.severity == "high" and issue.field})
     return ExtractionResult(
         doc_type=doc_type,
         route=route,
-        extract=outcome.payload,
+        extract=model.model_dump(mode="json"),
         extractor=vision.name,
         repair_attempts=outcome.attempts,
         structured_errors=outcome.errors,

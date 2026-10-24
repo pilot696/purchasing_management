@@ -1,7 +1,7 @@
 # 企业通用间接采购智能管理与风控系统 — PRD & Agent Spec
 
 > **Procurement AI Agent Workbench**｜全栈 + Multi-Agent 工程级需求与技术架构说明书
-> 版本：v1.15（W4 收尾：HITL edits、供应商目录/趋势、PDF 上传、M3 多发票分批核销、CI/依赖锁定）｜日期：2026-10-24｜目标岗位：AI 应用 / Agent 开发工程师
+> 版本：v1.16（真实模型全量评测：M2 23/30 真实复核 + 扫描件 VLM 24/24、成本/延迟回填）｜日期：2026-10-24｜目标岗位：AI 应用 / Agent 开发工程师
 > 本文档是开发与 pen.dev 画布设计的**唯一事实来源**。任何实现偏离需在 §13 变更记录中登记。
 
 ---
@@ -2471,7 +2471,7 @@ make eval SUITE=m3        # 单套件
   后端 88 单测 + 17 集成、前端 39 单测、4 套真实 e2e 冒烟（M1/M2/M3/demo）。
 · 自写 OpenAI 兼容网关（路由/降级/重试/缓存/结构化 repair）与可观测表（run_event 回放、
   llm_call 记账、evidence 引用后置校验），每条结论可追溯到规则/证据/人工决策；
-  确定性基线成本 ¥0（FakeLLM）；M2 真实网关已跑全量：23/30 复核成功、0 失败、8.7 分钟、估算 ¥0.391；扫描件 VLM 与 embedding 仍待接入。
+  确定性基线成本 ¥0（FakeLLM）；M2 真实网关已跑全量：23/30 复核成功、0 失败、8.7 分钟、估算 ¥0.391；扫描件 VLM 已跑全量：24/24 成功、发票字段 100%（n=12）、p50 35.7s、估算 ¥2.89；embedding 与 M2 专家 gold 仍待接入。
 ```
 
 ### 12.6 答辩预案（面试官最可能追问的 12 问）
@@ -2541,6 +2541,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-23 | v1.13 | W4 收尾：`docs/EVAL_REPORT.md` + `evals/latest.json`（四套基线汇总、7 条诚实边界、复现命令）；`design/tokens.json` + `design/design.pen`（schema 2.14，6 artboards）+ `preview.html` + `scripts/gen_design_pen.py`；根 `Dockerfile`（多阶段：前端构建→Python 运行时同端口托管）+ compose `api` 服务（迁移自动、healthcheck）+ `docs/DEPLOYMENT.md`；Spec §12 简历数字按实测回填（未测项显式标注） | W4 第 1~4 步实现 |
 | 2026-10-23 | v1.14 | W4 演示闭环：`GET /runs`（历史/分页/待复核关联）、`GET /reviews` 收件箱（模块/verdict/summary）、`GET /runs/{id}/trace`（事件+llm_call）、`GET /rules`（规则+容差只读）、`GET /observability/{summary,evals}`；Run 中心/规则库/可观测页落地，业务页 `?run=` 深链；OpenCode Go 真实网关接入（session 头/dotenv 展开/usage 归因/JSON 容错）；`scripts/demo_runs.py` + `scripts/screenshots.py`（7 张截图）；`docs/RESUME_TEMPLATE.md` | W4 演示闭环实现 |
 | 2026-10-24 | v1.15 | W4 收尾：HITL `edits` 全链路（M1 勾选/改值、审计只记实际应用集合）；`GET /suppliers` 目录/详情/趋势 + `GET /reviews/{id}` + `/metrics/overview`；`POST /documents/upload`（sha256 去重/关联）；M3 多发票顺序核销（≤20 张、`invoices[]`/`multi_invoice`、finalize 聚合 qty_invoiced 与全部 invoice.status）；CI + requirements 锁定 + eval_report 聚合脚本 | W4 收尾实现 |
+| 2026-10-24 | v1.16 | 真实模型全量评测：M2 真实网关 30 家（23 ok / 7 闸门跳过 / 0 失败，522s，¥0.391；max_tokens 8192 + 截断检测修复）、扫描件 VLM 24/24 成功（12 合同 + 12 发票，发票 3 字段 100%，p50 35.7s，¥2.89）；`m2_eval --real-llm` / `extract_eval --vision` 配置化；`evals/latest.json` 增加 m2_real / extraction_vision | 真实评测回填 |
 
 ---
 

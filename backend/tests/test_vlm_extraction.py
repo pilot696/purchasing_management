@@ -121,3 +121,26 @@ def test_render_pages_produces_png(dataset: dict) -> None:
     assert images[0][:8] == b"\x89PNG\r\n\x1a\n"
     assert len(images[0]) > 10_000
 
+
+
+def test_normalize_tax_rate_percent_to_decimal() -> None:
+    from app.extraction.service import _normalize_tax_rate
+
+    assert _normalize_tax_rate(13) == 0.13
+    assert _normalize_tax_rate("13%") == 0.13
+    assert _normalize_tax_rate("0.13") == 0.13
+    assert _normalize_tax_rate(None) is None
+    assert _normalize_tax_rate("bad") == "bad"
+
+
+def test_normalize_vision_payload_tax_rates() -> None:
+    from app.extraction.service import _normalize_vision_payload
+
+    payload = {
+        "tax_rates": ["13"],
+        "lines": [{"line_no": 1, "tax_rate": "13"}, {"line_no": 2, "tax_rate": 0.06}],
+    }
+    normalized = _normalize_vision_payload("invoice", payload)
+    assert normalized["tax_rates"] == [0.13]
+    assert normalized["lines"][0]["tax_rate"] == 0.13
+    assert normalized["lines"][1]["tax_rate"] == 0.06

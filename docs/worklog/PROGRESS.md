@@ -9,7 +9,7 @@
 |---|---|
 | 当前里程碑 | **W0（骨架）— 已完成（除依赖 Docker 的端到端冒烟）** |
 | 当前分支/提交 | `main` 首个提交（P0 全量） |
-| 最近一次全量测试 | 后端 **28 passed / 3 skipped**（0.43s）+ **integration 3 passed**（DB 就绪时）；前端 18 passed；`tsc --noEmit` 0；`vite build` 通过；`smoke_e2e.py` OK |
+| 最近一次全量测试 | 后端 **121 个测试（114 passed / 7 skipped）**；前端 **45 passed**；`tsc --noEmit` 0；`vite build` 通过（390.71KB）；4 套 e2e smoke OK |
 | 下一步 (Next) | 启动 Docker Desktop → `scripts/dev.ps1 up/migrate` → 跑 3 条 integration 测试 → 端到端 SSE 演示；然后进入 W1-M3（数据工厂 → 抽取 → 对齐 → 容差） |
 
 ---
@@ -324,7 +324,7 @@
   2. 供应商目录/详情/趋势：GET /suppliers、GET /suppliers/{code}；页面表格点选 + 最近 6 次评估趋势；GET /reviews/{id}；GET /metrics/overview 别名。
   3. 文件上传：POST /documents/upload 裸 PDF body，sha256 去重、20MB 限制、可选 linked_no 关联 invoice/po；M3 页面上传卡片。
   4. 工程化：CI（后端离线单测 + 前端 typecheck/test/build）、requirements 15 项精确锁定、eval_report 聚合脚本、根目录清理。
-- **验证结果**：后端 **118 passed / 0 failed / 6 skipped**（VM DB）；前端 **43 passed + typecheck/build OK**；e2e SMOKE_M1/M2/M3=OK（VM DB，FakeLLM）；上传去重/关联集成测试通过。
+- **验证结果**：后端 **118 个测试（112 passed / 6 skipped）**（VM DB）；前端 **43 passed + typecheck/build OK**；e2e SMOKE_M1/M2/M3=OK（VM DB，FakeLLM）；上传去重/关联集成测试通过。
 - **未完成**：M3 多发票分批核销（仍取 invoice_nos[0]，前端单发票输入）；上传文档仅入库+抽取，未自动创建发票/PO 业务记录并接入 M3；幂等/限流未实现；M2 评测总分均值分母问题未修。
 - **下一步 (Next)**：多发票状态机 + 上传建档联动；然后真实模型全量 eval（需 VLM/embedding provider 与少量费用）。
 
@@ -336,7 +336,7 @@
   - `compose_report` 保留单发票旧字段（`invoice_no/invoice_lines`），新增 `invoice_nos[]/invoices[]/multi_invoice`，diffs/line_matches 带 `invoice_no`；
   - `finalize` 按 `invoice_no` 映射行，单事务聚合累加 `po_line.qty_invoiced`、更新全部 `invoice.status`、写一次尾差池与审计；
   - 前端发票号支持逗号/空格分隔多张，报告头显示批次与每张金额，对齐表按发票分组、每条行可打开对应发票 PDF，差异项带发票号。
-- **验证结果**：后端全量 **119 passed / 6 skipped**（单测 91/3、集成 28/3）；前端 **45 passed + typecheck/build OK**；单发票 `SMOKE_M3=OK`（`multi_invoice=false`）；双发票 HTTP e2e `MULTI=True → succeeded → 两张 invoice.status=matched`，`match_run.invoice_ids` 两条；重复发票号入口去重测试通过。
+- **验证结果**：后端全量 **119 个测试（113 passed / 6 skipped**：单测 91/3、集成 28/3）；前端 **45 passed + typecheck/build OK**；单发票 `SMOKE_M3=OK`（`multi_invoice=false`）；双发票 HTTP e2e `MULTI=True → succeeded → 两张 invoice.status=matched`，`match_run.invoice_ids` 两条；重复发票号入口去重测试通过。
 - **下一步 (Next)**：真实模型全量评测（需 VLM/embedding 端点或费用确认）；上传文档自动建档（Invoice/PO 行项目）联动 M3。
 
 ### [2026-10-24 08:55] W4 收尾：真实评测配置化（模型名 env 覆盖 + M2/VLM 评测开关）
@@ -345,7 +345,7 @@
   - `m2_eval.py --real-llm --supplier-limit 1 --clear-cache` 真实网关调用成功（未缓存 17.5s，llm_status=ok）；
   - 离线 `m2_eval` / `extract_eval` 均 OK；extraction baseline 237 份（native 213 / scanned 24），上传文档默认不计入基线；
   - 未配置视觉 key 时 `extract_eval --vision` 给出明确中文提示并退出；
-  - 全量后端 119 passed / 6 skipped，前端 45 passed（未改前端）。
+  - 全量后端 119 个测试（113 passed / 6 skipped），前端 45 passed（未改前端）。
 - **下一步 (Next)**：等用户提供 OpenAI 兼容 VLM 端点+key（或确认实现网关 Anthropic 适配器）；embedding dense leg 仍需代码实现。
 
 ### [2026-10-24 09:40] W4-M2：真实网关全量基线跑通（30 家，23 ok / 7 闸门跳过 / 0 失败）
@@ -357,3 +357,12 @@
   提高 max_tokens 到 8192 + 截断显式检测/精简重试后，两家一次通过；重跑冷缓存得到干净基线。
 - **诚实边界**：23 家只证明"可调用/可解析/可引用校验/无整体降级"，不是专家质量；M2 仍无 gold（MAE/κ 未测）。
 - **下一步 (Next)**：用百炼 key 跑 `extract_eval --vision --limit-docs 5` 验证扫描件 VLM；embedding dense leg 待实现。
+
+### [2026-10-24 10:20] W4-VLM：扫描件 VLM 真实全量基线（24/24 成功）
+- **变更文件**：`backend/app/extraction/service.py`（税率百分比→小数归一化、VLM extract 存归一化 payload）、`backend/app/extraction/vlm.py`（提示词要求 13%→0.13）、`scripts/extract_eval.py`（--scanned-only/--doc-type、失败明细、VLM 预检、成本可复现）、`scripts/eval_report.py`（聚合 extraction_vision）、README/EVAL_REPORT §6.2/RESUME/SPEC v1.16。
+- **结果**：百炼 qwen3.8-max，24 份扫描件（12 合同 + 12 发票）**24/24 成功**、needs_review=0、failed=0；
+  发票号/价税合计/销方名称 **100%（n=12）**；延迟 p50 **35.7s** / p95 **49.3s**；
+  24 份共 31 次调用（含 repair）、**94,107 in + 36,486 out tokens**、估算 **¥2.89（约 ¥0.12/份）**。
+- **踩坑**：VLM 把税率写成 13 导致 `TAX_RATE_INVALID`（5/5 发票 needs_review）；加 `_normalize_tax_rate`（13/"13%"/0.13 统一 0.13）后复测 5/5 发票 ok，再跑全量通过。
+- **诚实边界**：合成扫描件；合同/PO 无逐字段 gold；VLM 输出无 bbox（扫描件 PDF 抽屉暂无高亮）；成本以百炼账单为准。
+- **下一步 (Next)**：embedding dense leg（可选）；M2 专家 gold 需人工标注。

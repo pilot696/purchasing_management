@@ -23,6 +23,7 @@ def load(name: str) -> dict:
 
 def main() -> None:
     extraction = load("extraction_baseline.json")
+    extraction_vision = load("extraction_baseline_vision.json")
     m1 = load("m1_baseline.json")
     m2 = load("m2_baseline.json")
     m2_real = load("m2_baseline_real.json")
@@ -42,6 +43,20 @@ def main() -> None:
             **pick(extraction, "docs", "route_distribution", "extractor_distribution", "scanned_needs_vlm", "per_doc_type", "invoice_field_accuracy", "invoice_field_n", "latency_ms"),
             "notes": "扫描件路由到 VLM 路径；离线未跑 VLM，失败数不代表版式精度",
         },
+        "extraction_vision": {
+            **pick(
+                extraction_vision,
+                "docs",
+                "vision_mode",
+                "per_doc_type",
+                "invoice_field_accuracy",
+                "invoice_field_n",
+                "latency_ms",
+                "llm_cost",
+                "generated_at",
+            ),
+            "notes": "24 份扫描件（12 合同 + 12 发票）VLM 全部抽取成功；发票 3 字段 100%（n=12）；成本为 31 次调用估算",
+        } if extraction_vision else {},
         "m1": {
             **pick(m1, "cases", "verdict_accuracy", "findings_exact_accuracy", "finding_micro", "per_anomaly_verdict_accuracy", "retrieval_top1_accuracy", "retrieval_samples", "patches", "elapsed_ms"),
             "notes": "规则 DSL + 词法/精确/规格桶 RRF；gold 与数据工厂同源",
@@ -84,6 +99,11 @@ def main() -> None:
     (EVALS / "latest.json").write_text(json.dumps(latest, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"written {EVALS / 'latest.json'}")
     print(f"  extraction docs={latest['extraction'].get('docs')}")
+    if latest.get("extraction_vision"):
+        print(
+            f"  extraction_vision docs={latest['extraction_vision'].get('docs')} "
+            f"cost_cny={latest['extraction_vision'].get('llm_cost', {}).get('cny')}"
+        )
     print(f"  m1 cases={latest['m1'].get('cases')} verdict={latest['m1'].get('verdict_accuracy')}")
     print(f"  m2 suppliers={latest['m2'].get('suppliers')} gates={latest['m2'].get('gate_detection', {}).get('recall')}")
     if latest.get("m2_real"):
@@ -97,5 +117,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

@@ -1,0 +1,50 @@
+{
+  "docs": 24,
+  "vision_mode": "llm-vision",
+  "route_distribution": {
+    "scanned": 24
+  },
+  "extractor_distribution": {
+    "llm-vision": 24
+  },
+  "scanned_needs_vlm": 0,
+  "per_doc_type": {
+    "contract": {
+      "ok": 12,
+      "needs_review": 0,
+      "failed": 0
+    },
+    "invoice": {
+      "ok": 12,
+      "needs_review": 0,
+      "failed": 0
+    }
+  },
+  "invoice_field_accuracy": {
+    "invoice_no": 1.0,
+    "amount_tax_incl": 1.0,
+    "seller_name": 1.0
+  },
+  "invoice_field_n": {
+    "invoice_no": 12,
+    "amount_tax_incl": 12,
+    "seller_name": 12
+  },
+  "latency_ms": {
+    "p50": 35742.83,
+    "p95": 49347.03,
+    "mean": 35568.09
+  },
+  "failures_sample": [],
+  "generated_at": "2026-10-24T10:15:15",
+  "llm_cost": {
+    "cache_entries": 31,
+    "docs": 24,
+    "tokens_in": 94107,
+    "tokens_out": 36486,
+    "usd": 0.4071,
+    "cny": 2.891,
+    "pricing": "qwen3.8-max 2.0/6.0 USD per 1M, fx=7.1",
+    "note": "24 份文档共 31 次调用（含 repair 重试）；按缓存 usage 汇总，最终以百炼账单为准"
+  }
+}

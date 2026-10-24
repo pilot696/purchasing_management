@@ -35,7 +35,14 @@ def _pct(values: list[float]) -> float:
     return round(sum(values) / len(values), 4) if values else 0.0
 
 
-async def run(*, vision=None, doc_limit: int | None = None, include_uploads: bool = False) -> dict:  # noqa: ANN001
+async def run(
+    *,
+    vision=None,  # noqa: ANN001
+    doc_limit: int | None = None,
+    include_uploads: bool = False,
+    scanned_only: bool = False,
+    doc_type: str | None = None,
+) -> dict:
     async with get_session_factory()() as session:
         docs = (await session.scalars(select(t.Doc).order_by(t.Doc.doc_type, t.Doc.id))).all()
         invoices = {row.id: row for row in (await session.scalars(select(t.Invoice))).all()}
@@ -44,6 +51,11 @@ async def run(*, vision=None, doc_limit: int | None = None, include_uploads: boo
     # 基线默认只看 seed 数据；上传文档（含测试伪 PDF）不混入，保证可复现
     if not include_uploads:
         docs = [doc for doc in docs if "/uploads/" not in doc.file_path.replace("\\", "/")]
+    if doc_type:
+        docs = [doc for doc in docs if doc.doc_type == doc_type]
+    if scanned_only:
+        # seed 中 has_text_layer=False 的 24 份即扫描件（12 合同 + 12 发票）
+        docs = [doc for doc in docs if doc.has_text_layer is False]
     if doc_limit:
         docs = docs[:doc_limit]
     if not docs:
@@ -70,7 +82,17 @@ async def run(*, vision=None, doc_limit: int | None = None, include_uploads: boo
             bucket["failed"].append(1.0)
             if result.route.kind == "scanned" and result.needs_review_fields == ["vlm_required"]:
                 scanned_ok += 1
-            failures.append({"doc_id": str(doc.id), "doc_type": doc.doc_type, "code": "no_extract"})
+            failures.append(
+                {
+                    "doc_id": str(doc.id),
+                    "doc_type": doc.doc_type,
+                    "route": result.route.kind,
+                    "extractor": result.extractor,
+                    "code": "no_extract",
+                    "issues": [issue.code for issue in result.issues],
+                    "errors": [err[:200] for err in result.structured_errors[:2]],
+                }
+            )
             continue
         has_high = any(issue.severity == "high" for issue in result.issues)
         bucket["needs_review" if has_high else "ok"].append(1.0)
@@ -147,6 +169,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="抽取基线评测（默认不跑 VLM；--vision 走真实视觉模型）")
     parser.add_argument("--vision", action="store_true", help="扫描件走真实 VLM（需配置 DASHSCOPE_API_KEY/VISION_MODEL）")
     parser.add_argument("--limit-docs", type=int, default=None, help="只评前 N 份文档（试跑控成本）")
+    parser.add_argument("--scanned-only", action="store_true", help="只评扫描件（has_text_layer=False，共 24 份）")
+    parser.add_argument("--doc-type", choices=["invoice", "po", "contract"], default=None, help="只评某类文档")
     parser.add_argument("--include-uploads", action="store_true", help="把用户上传文档也纳入评测（默认只评 seed 文档）")
     parser.add_argument("--clear-cache", action="store_true", help="评测前清空 prompt 缓存")
     parser.add_argument("--out", type=Path, default=None, help="输出 JSON 路径")
@@ -178,7 +202,13 @@ def main() -> None:
 
     ensure_windows_selector_loop(force=True)
     summary = asyncio.run(
-        run(vision=vision, doc_limit=args.limit_docs, include_uploads=args.include_uploads)
+        run(
+            vision=vision,
+            doc_limit=args.limit_docs,
+            include_uploads=args.include_uploads,
+            scanned_only=args.scanned_only,
+            doc_type=args.doc_type,
+        )
     )
     out_path = args.out or (
         PROJECT_ROOT / "evals" / ("extraction_baseline_vision.json" if args.vision else "extraction_baseline.json")

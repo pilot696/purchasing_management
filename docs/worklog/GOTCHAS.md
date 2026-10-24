@@ -437,3 +437,9 @@
 - **根因定位**：reason 角色 `max_tokens=4096`，DeepSeek reasoning tokens 与正文共享额度；复杂供应商（SUP-022/SUP-025）在正文中途被截断，provider 未检查 `finish_reason=length`，JSON 解析失败后重试仍 4096。
 - **修复手段**：`models.yaml` reason/reason_small `max_tokens` 提升到 **8192**；`call_llm_review` 检查 `choices[0].finish_reason == "length"` 时抛显式 `OUTPUT_TRUNCATED`；重试提示要求更精简（top_risks≤3、conditions≤2、memo≤80）并输出完整 JSON。
 - **防回归**：cold-cache 全量重跑 30 家：**23 ok / 7 闸门跳过 / 0 失败**，SUP-022/025 定向验证均 ok；`m2_eval` 输出 `llm_failures` 明细，空数组为通过。
+
+## G-055｜VLM 把税率 13% 写成 13，校验器全量误报 TAX_RATE_INVALID
+- **问题现象**：VLM 抽取 5 份扫描发票，字段准确率 100%，但 5/5 都 `needs_review`，问题均为 `TAX_RATE_INVALID: 非法税率 13`。
+- **根因定位**：模型输出 `tax_rate: "13"`（百分比字符串），业务校验器期望小数 `0.13`；native 解析器内部已做换算，VLM 分支没有。
+- **修复手段**：`extraction/service.py` 增加 `_normalize_tax_rate`（13 / "13%" → 0.13，0.13 保持不变）并在 VLM payload 校验前归一化；提示词明确要求税率用小数；保存的 extract 用归一化后的 model_dump。
+- **防回归**：`test_vlm_extraction.py` 新增税率归一化/整 payload 单测；全量 24 份复测 24/24 ok、0 needs_review。
