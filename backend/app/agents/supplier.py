@@ -23,6 +23,7 @@ from langgraph.graph import END, START, StateGraph
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.config import get_settings
 from app.llm.router import get_router
 from app.llm.types import LLMResult, Message
 from app.models import tables as t
@@ -33,6 +34,7 @@ from app.schemas.supplier import (
     LlmRiskReview,
     SupplierEvalResult,
 )
+from app.scoring.payment import financing_adjustment, parse_payment_days
 from app.scoring.supplier import (
     DEFAULT_WEIGHTS,
     DIMENSION_LABELS,
@@ -299,6 +301,29 @@ async def aggregate_metrics(session: AsyncSession, context: dict[str, Any]) -> d
         weighted_qty += qty
     price_index = (weighted_index / weighted_qty) if weighted_qty else None
 
+    # 账期资金占用：优先合同 payment_terms.days，缺失回退报价 payment_terms 文本
+    supplier_id = UUID(context["supplier"]["supplier_id"])
+    payment_days_values: list[int] = []
+    contracts = (await session.scalars(select(t.Contract).where(t.Contract.supplier_id == supplier_id))).all()
+    for contract in contracts:
+        days = parse_payment_days(contract.payment_terms)
+        if days is not None:
+            payment_days_values.append(days)
+    if not payment_days_values:
+        quotes = (await session.scalars(select(t.Quote).where(t.Quote.supplier_id == supplier_id))).all()
+        for quote in quotes:
+            days = parse_payment_days(quote.payment_terms)
+            if days is not None:
+                payment_days_values.append(days)
+    payment_days_avg = (sum(payment_days_values) / len(payment_days_values)) if payment_days_values else None
+    settings = get_settings()
+    effective_index, financing_factor = financing_adjustment(
+        price_index,
+        payment_days_avg,
+        annual_rate=settings.m2_financing_annual_rate,
+        baseline_days=settings.m2_financing_baseline_days,
+    )
+
     # 交付：PO 行承诺交期 vs 最早收货日期
     po_lines = (
         await session.scalars(
@@ -398,7 +423,12 @@ async def aggregate_metrics(session: AsyncSession, context: dict[str, Any]) -> d
 
     metrics = {
         "price": {
-            "price_index": round(price_index, 4) if price_index is not None else None,
+            "price_index": round(effective_index, 4) if effective_index is not None else None,
+            "price_index_raw": round(price_index, 4) if price_index is not None else None,
+            "payment_days": round(payment_days_avg, 1) if payment_days_avg is not None else None,
+            "financing_factor": financing_factor,
+            "financing_annual_rate": settings.m2_financing_annual_rate,
+            "financing_baseline_days": settings.m2_financing_baseline_days,
             "sample_size": len(context["history"]),
             "p50_reference": round(median(p50_by_bucket.values()), 2) if p50_by_bucket else None,
         },

@@ -1,0 +1,13 @@
+{
+  "samples": 500,
+  "dimension_mae": 7e-08,
+  "max_abs_delta": 5e-07,
+  "verdict_mismatch": 0,
+  "elapsed_ms": 6.43,
+  "generated_at": "2026-10-24T13:59:59",
+  "notes": [
+    "第二实现差分校验（不同代码重写公式/阈值），不是人工专家 gold；",
+    "只能证明实现一致性，不能证明权重/阈值符合业务；",
+    "随机指标固定 seed=42 可复现。"
+  ]
+}

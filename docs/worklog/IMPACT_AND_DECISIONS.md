@@ -259,3 +259,9 @@
 - **GitNexus impact/detect_changes**：29 files / 72 symbols / 72 execution flows，risk=critical；核心波及 `M1 finalize / precheck 规则节点`、`M2 finalize / scoring`、`M3 load/reconcile/finalize`、`extraction PDF/validators`、`seed persist`、`API routes`。
 - **最终方案**：finalize 行锁 + Decimal；M1 预算 committed 同事务；M3 ContractLine 差异；M2 横向比价；M1 库存/历史/验收；P2 细节修复；文档 v1.18、测试 139、e2e 4 套全绿。
 - **同步章节**：Spec v1.18（endpoints/changelog）；README 状态；EVAL_REPORT §9；RESUME 数字；GOTCHAS G-058~G-061。
+
+## ADR-024｜v1.19 评测增强与账期评分
+- **触发**：上一轮明确剩余风险：评测同源自证、账期未进评分。
+- **GitNexus 影响面**：新增 `app/evaluation/*`、`app/scoring/payment.py`、`scripts/independent_extraction_eval.py`、`scripts/m2_reference_check.py`；改 `agents/supplier.py aggregate_metrics`、`extraction/pdf_native.py` 金额正则、`core/config.py`、`eval_report.py`。
+- **方案**：独立渲染器+手写 gold（40/40）、第二实现差分（MAE 7e-08/verdict 0）、账期现值折算（可配置，基准 30 天/年化 8%，mean_scored 79.52）。
+- **同步**：Spec v1.19、README/EVAL/RESUME/latest、GOTCHAS G-062/G-063。

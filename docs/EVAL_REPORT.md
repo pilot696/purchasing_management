@@ -82,7 +82,7 @@ LLM 复核者叙述（schema 无分数，`evidence_refs` 后置校验）。**未
 
 | 项 | 结果 |
 |---|---|
-| 后端单测 | **101 passed / 3 skipped**（104 个） |
+| 后端单测 | **111 passed / 3 skipped**（114 个） |
 | 后端集成测试（DB） | **31 passed / 4 skipped**（35 个） |
 | 前端单测 | **45 passed** |
 | 前端构建 | **398.09 KB / gzip 119.25 KB** |
@@ -106,7 +106,7 @@ LLM 复核者叙述（schema 无分数，`evidence_refs` 后置校验）。**未
 | 敏感性 flip_rate | 5.99%（300×U(0.8,1.2)） |
 | 维度完整性 | 3.83/5（部分供应商缺 OTD/QC 数据） |
 
-> 口径说明：`total_score.mean=60.95` 含闸门否决的 0 分，不能当"平均质量分"；对外使用 **`mean_scored=79.50`（23 家参与评分）**；`llm_failures=[]` 但 23 家是 LLM 参与、
+> 口径说明：`total_score.mean=60.96` 含闸门否决的 0 分，不能当"平均质量分"；对外使用 **`mean_scored=79.52`（23 家参与评分）**；`llm_failures=[]` 但 23 家是 LLM 参与、
 > 7 家被闸门短路；M2 仍**没有专家 gold**，23 家真实复核只能证明"可调用、可解析、可引用校验、无整体降级"，
 > 不能证明风险判断准确率。
 
@@ -178,6 +178,15 @@ python scripts/smoke_m1.py && python scripts/smoke_m2.py && python scripts/smoke
 > 本节回应外部审查的 P0/P1/P2 问题；不是新评测，而是正确性/覆盖修复记录。
 
 - **P0 财务正确性**：M3 finalize 的 `qty_invoiced` 累加与尾差池改 Decimal（`ROUND_HALF_UP`、按 DB 精度 quantize）；M1/M2/M3 finalize 先 `SELECT ... FOR UPDATE` 锁 run 行再查审计，消除并发 resume 双写；M1 放行同事务、锁 budget 行写回 `amount_committed`，并新增 `precheck_release` 审计锚点。
+- **M2 价格评分**：供应商价格指数增加账期资金占用折算（合同/报价账期 → 年化 8% 资金成本，基准 30 天；`M2_FINANCING_ANNUAL_RATE` 可配、0 可关闭），离线基线 mean_scored 79.50→79.52。
 - **P1 业务覆盖**：M3 装载 `ContractLine`，新增 `contract_price/contract_qty/contract_amount/contract_delivery` 差异并升级 overall；M2 新增 `GET /quotes/comparables`（同一 PR 多供应商报价，按含税价 + 年化 8% 账期资金占用排序）与前端表格；M1 增加库存可用量、最近一次历史 PO 成交价、验收条款显式状态（未结构化执行时明确标注）。
 - **P2 缺陷修复**：quality_score 删除恒等冗余的 40% 缺陷项与 rework 死代码；G3 黑名单/失信去重；规则算术除零/类型错误包 `RuleEvalError`；L3 ambiguous 配对 consumed=0 + `ambiguous_match` 高优差异；上传 sha/发票号并发唯一约束兜底；红冲负数数量允许并标记人工复核；词法检索加 `min_similarity=0.05`；LLM 丢弃证据条数写回 report 并在前端展示；PDF 原生解析兼容 20 位发票号、全角括号、￥/¥、“小写”等变体。
 - **仍未解决**：真实票据人工标注 gold、M2 专家 gold（MAE/κ）、embedding dense leg、生产级鉴权/限流/Postgres checkpointer；上述基线仍是同源回归，不能替代真实泛化评测。
+
+
+## 10. 独立测试集与第二实现差分（v1.19）
+
+- **独立文档抽取集**：`scripts/independent_extraction_eval.py` 使用与 `app.seed.render` 不同的渲染器，手写 4 份 gold（2 发票 + PO + 合同），覆盖 20 位发票号、全角括号、￥/¥、小写金额、独立 PO/合同版式；字段级 **40/40 = 100%**，doc 通过 4/4。它证明的是"格式变体回归"，**不是真实票据泛化**。
+- **M2 第二实现**：`scripts/m2_reference_check.py` 用独立代码重写五维公式与 verdict 阈值，对 500 组固定 seed 随机指标做差分：`dimension_mae=7e-08`、`max_abs_delta=5e-07`、`verdict_mismatch=0`。这是实现一致性校验，**不是人工专家 gold**。
+- **M2 账期折算**：价格指数按供应商平均账期（合同 payment_terms 优先，报价回退）做资金占用折算，年化 8%、基准 30 天，`M2_FINANCING_ANNUAL_RATE` 可配为 0 关闭；离线基线 mean_scored 79.50→79.52（分数变化很小，闸门/verdict 分布不变）。
+- **可信边界**：上述两项补强了"非自证"程度，但真实质量证据仍缺：真实票据双人标注、M2 专家评分/κ、M3 合同条款业务确认。

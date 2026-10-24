@@ -24,9 +24,11 @@ def load(name: str) -> dict:
 def main() -> None:
     extraction = load("extraction_baseline.json")
     extraction_vision = load("extraction_baseline_vision.json")
+    extraction_independent = load("extraction_independent.json")
     m1 = load("m1_baseline.json")
     m2 = load("m2_baseline.json")
     m2_real = load("m2_baseline_real.json")
+    m2_reference = load("m2_reference.json")
     m3 = load("m3_baseline.json")
     previous = load("latest.json")
 
@@ -57,6 +59,19 @@ def main() -> None:
             ),
             "notes": "24 份扫描件（12 合同 + 12 发票）VLM 全部抽取成功；发票 3 字段 100%（n=12）；成本为 31 次调用估算",
         } if extraction_vision else {},
+        "extraction_independent": {
+            **pick(
+                extraction_independent,
+                "docs",
+                "ok",
+                "field_total",
+                "field_matched",
+                "field_accuracy",
+                "elapsed_ms",
+                "generated_at",
+            ),
+            "notes": "独立渲染器 + 手写 gold（4 份：20 位发票号/全角金额/PO/合同）；合成数据，非真实票据人工标注",
+        } if extraction_independent else {},
         "m1": {
             **pick(m1, "cases", "verdict_accuracy", "findings_exact_accuracy", "finding_micro", "per_anomaly_verdict_accuracy", "retrieval_top1_accuracy", "retrieval_samples", "patches", "elapsed_ms"),
             "notes": "规则 DSL + 词法/精确/规格桶 RRF；gold 与数据工厂同源",
@@ -92,6 +107,10 @@ def main() -> None:
             "greedy": m3.get("greedy"),
             "notes": "gold 与 reconcile 同源；每组 1 行时匈牙利与贪心指标相同",
         },
+        "m2_reference": {
+            **pick(m2_reference, "samples", "dimension_mae", "max_abs_delta", "verdict_mismatch", "elapsed_ms", "generated_at"),
+            "notes": "第二实现差分校验：不同代码重写五维公式/阈值，500 组随机指标；不是人工专家 gold",
+        } if m2_reference else {},
         "engineering": previous.get("engineering", {}),
         "real_llm_smoke": previous.get("real_llm_smoke", {}),
         "pending_measurements": previous.get("pending_measurements", []),
@@ -104,6 +123,11 @@ def main() -> None:
             f"  extraction_vision docs={latest['extraction_vision'].get('docs')} "
             f"cost_cny={latest['extraction_vision'].get('llm_cost', {}).get('cny')}"
         )
+    if latest.get("extraction_independent"):
+        print(
+            f"  extraction_independent docs={latest['extraction_independent'].get('docs')} "
+            f"accuracy={latest['extraction_independent'].get('field_accuracy')}"
+        )
     print(f"  m1 cases={latest['m1'].get('cases')} verdict={latest['m1'].get('verdict_accuracy')}")
     print(f"  m2 suppliers={latest['m2'].get('suppliers')} gates={latest['m2'].get('gate_detection', {}).get('recall')}")
     if latest.get("m2_real"):
@@ -113,6 +137,11 @@ def main() -> None:
             f"cost_cny={latest['m2_real'].get('llm_cost', {}).get('cny')}"
         )
     print(f"  m3 cases={latest['m3'].get('cases')}")
+    if latest.get("m2_reference"):
+        print(
+            f"  m2_reference mae={latest['m2_reference'].get('dimension_mae')} "
+            f"verdict_mismatch={latest['m2_reference'].get('verdict_mismatch')}"
+        )
 
 
 if __name__ == "__main__":

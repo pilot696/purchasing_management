@@ -1,7 +1,7 @@
 # 企业通用间接采购智能管理与风控系统 — PRD & Agent Spec
 
 > **Procurement AI Agent Workbench**｜全栈 + Multi-Agent 工程级需求与技术架构说明书
-> 版本：v1.18（正确性修复：Decimal 账务 / finalize 行锁 / 预算 committed / 合同行三单 / 横向比价 / 预检库存历史）｜日期：2026-10-24｜目标岗位：AI 应用 / Agent 开发工程师
+> 版本：v1.19（独立文档测试集 / M2 第二实现差分 / 账期进入价格评分）｜日期：2026-10-24｜目标岗位：AI 应用 / Agent 开发工程师
 > 本文档是开发与 pen.dev 画布设计的**唯一事实来源**。任何实现偏离需在 §13 变更记录中登记。
 
 ---
@@ -2546,6 +2546,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-24 | v1.16 | 真实模型全量评测：M2 真实网关 30 家（23 ok / 7 闸门跳过 / 0 失败，522s，¥0.391；max_tokens 8192 + 截断检测修复）、扫描件 VLM 24/24 成功（12 合同 + 12 发票，发票 3 字段 100%，p50 35.7s，¥2.89）；`m2_eval --real-llm` / `extract_eval --vision` 配置化；`evals/latest.json` 增加 m2_real / extraction_vision | 真实评测回填 |
 | 2026-10-24 | v1.17 | 上传建档：`POST /documents/upload` + `POST /documents/{id}/ingest`（发票 Invoice+InvoiceLine、供应商匹配、幂等/409）；Idempotency-Key（`/runs`/`/resume`/`/decision`）与演示限流；M2 评分口径增加 `mean_scored`；M3 页面一键抽取建档；测试 128 个（121 passed / 7 skipped） | 上传闭环 + 防重 |
 | 2026-10-24 | v1.18 | 审查驱动修复：M3 finalize Decimal/行锁/预算 committed；ContractLine 三单差异 + M2 横向比价 + M1 库存/历史/验收；quality/G3/除零/ambiguous/TOCTOU/红冲/词法/LLM dropped/真实发票正则；测试 139 个（132 passed / 7 skipped） | 正确性 + 需求覆盖 |
+| 2026-10-24 | v1.19 | 独立于 seed 渲染器的文档测试集（4 份/44 字段/100%，手写 gold）；M2 第二实现差分（500 组，MAE 7e-08、verdict 0 不一致）；账期资金占用进入 M2 价格指数（可配置，mean_scored 79.52）；测试 149 个（142 passed / 7 skipped） | 评测可信度 + 评分口径 |
 
 ---
 

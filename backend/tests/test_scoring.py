@@ -204,3 +204,17 @@ def test_blacklisted_and_dishonest_do_not_duplicate_g3() -> None:
     )
     g3 = [hit for hit in hits if hit["code"] == "G3_DISHONEST"]
     assert len(g3) == 1
+
+
+def test_payment_days_and_financing_adjustment() -> None:
+    from app.scoring.payment import financing_adjustment, parse_payment_days
+
+    assert parse_payment_days({"days": 45}) == 45
+    assert parse_payment_days("月结60天") == 60
+    assert parse_payment_days("预付30%") == 0
+    assert parse_payment_days(None) is None
+    # 60 天账期比 30 天基准更便宜：价格指数应下调
+    adjusted, factor = financing_adjustment(1.0, 60, annual_rate=0.08, baseline_days=30)
+    assert adjusted < 1.0 and factor < 1.0
+    unchanged, factor_zero = financing_adjustment(1.0, 60, annual_rate=0.0)
+    assert unchanged == 1.0 and factor_zero == 1.0

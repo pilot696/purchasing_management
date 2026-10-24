@@ -30,8 +30,8 @@
     "expected": 5
   },
   "total_score": {
-    "mean": 60.95,
-    "mean_scored": 79.5,
+    "mean": 60.96,
+    "mean_scored": 79.52,
     "min_scored": 68.06,
     "max_scored": 96.02,
     "scored_n": 23,
@@ -39,7 +39,7 @@
     "note": "mean_scored 排除闸门否决的 0 分；mean 为旧口径（含否决）"
   },
   "sensitivity": {
-    "mean_flip_rate": 0.0599,
+    "mean_flip_rate": 0.06,
     "most_sensitive": {
       "delivery": 1,
       "none": 14,
@@ -169,8 +169,8 @@
       "error": "RuntimeError: offline evaluation: LLM disabled"
     }
   ],
-  "elapsed_ms": 363.63,
-  "generated_at": "2026-10-24T10:52:13",
+  "elapsed_ms": 423.66,
+  "generated_at": "2026-10-24T13:58:30",
   "notes": [
     "离线基线：LLM 复核者标记 unavailable（不伪造正文），分数/闸门/敏感性均为确定性计算；",
     "数据工厂无 M2 专家标注 gold，本基线验证的是『规则契约』（注入异常是否 100% 检出、无误杀、冷启动正确降级）；",

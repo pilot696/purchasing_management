@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     # 演示限额
     demo_rate_limit_runs: int = 10
 
+    # M2 价格评分：账期资金占用折算（0=关闭）
+    m2_financing_annual_rate: float = 0.08
+    m2_financing_baseline_days: float = 30.0
+
     @property
     def llm_config_file(self) -> Path:
         p = Path(self.llm_config_path)

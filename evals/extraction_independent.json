@@ -1,0 +1,52 @@
+{
+  "docs": 4,
+  "ok": 4,
+  "field_total": 40,
+  "field_matched": 40,
+  "field_accuracy": 1.0,
+  "elapsed_ms": 92.35,
+  "generated_at": "2026-10-24T13:55:52",
+  "notes": [
+    "独立渲染器 + 手写 gold：不复用 seed 的 PDF 模板/数据集，也不是从解析结果反推 gold；",
+    "仍是合成 PDF（含真实 20 位发票号、全角括号、￥/小写等格式变体），不能替代真实票据人工标注；",
+    "每条文档的字段级失败保留在 results[].failures，便于定位版式差异。"
+  ],
+  "results": [
+    {
+      "name": "invoice_20_digit_fullwidth",
+      "doc_type": "invoice",
+      "bytes": 3815,
+      "ok": true,
+      "matched": 11,
+      "total": 11,
+      "failures": []
+    },
+    {
+      "name": "invoice_legacy_alias",
+      "doc_type": "invoice",
+      "bytes": 3810,
+      "ok": true,
+      "matched": 11,
+      "total": 11,
+      "failures": []
+    },
+    {
+      "name": "po_independent_layout",
+      "doc_type": "po",
+      "bytes": 3438,
+      "ok": true,
+      "matched": 8,
+      "total": 8,
+      "failures": []
+    },
+    {
+      "name": "contract_independent_layout",
+      "doc_type": "contract",
+      "bytes": 3523,
+      "ok": true,
+      "matched": 10,
+      "total": 10,
+      "failures": []
+    }
+  ]
+}

@@ -293,7 +293,7 @@ def parse_po(pdf_bytes: bytes) -> tuple[PoExtract, list[Annotation]]:
     lines = _lines_from_table(_first_table_with(tables, "物料描述"))
     if not lines:
         raise ParseError("PO 行项目表未解析到")
-    total = _dec(_search(re.compile(rf"含税合计[:：]\s*¥?\s*{MONEY}"), text))
+    total = _dec(_search(re.compile(rf"含税合计[:：]\s*[¥￥]?\s*{MONEY}"), text))
     supplier = header.get("供应商")
     annotations = [
         a
@@ -323,7 +323,7 @@ def parse_contract(pdf_bytes: bytes) -> tuple[ContractExtract, list[Annotation]]
         raise ParseError("合同编号未找到")
     header = _header_map(tables)
     supplier = header.get("乙方")
-    total = _dec(_search(re.compile(rf"合同金额\s*¥?\s*{MONEY}"), text))
+    total = _dec(_search(re.compile(rf"合同金额\s*[¥￥]?\s*{MONEY}"), text))
     payment_days = _search(re.compile(r"账期\s*(\d+)\s*天"), text)
     payment_mode = _search(re.compile(r"双方约定[:：]\s*([^，。]+)"), text)
     lead_days = _search(re.compile(r"交付周期[:：]\s*(\d+)\s*天"), text)

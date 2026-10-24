@@ -473,3 +473,13 @@
 - **问题现象**：`SequenceMatcher.ratio >= 0.90` 对短中文误报高；“办公椅/办公桌”可能被判同物并自动 consumed。
 - **修复手段**：ambiguous match 一律 `consumed_qty=0`、`status="ambiguous"`，追加 `ambiguous_match` 高优差异（HARD→hold），需人工确认。
 - **防回归**：`tests/test_matching.py::test_ambiguous_l3_match_requires_human_before_consumption`。
+
+## G-062｜独立测试集立刻暴露了“同源解析约定”
+- **问题现象**：独立渲染器第一版 4 份文档只过 1 份：发票税率硬编码 13%、PO/合同金额用 `￥` 而解析器只匹配 `¥`、合同第一处“合同金额 0.05%”被误当总额。
+- **修复手段**：解析器 PO/合同金额正则接受 `[¥￥]`；独立 fixture 使用行税率；加手写 gold 字段级断言。
+- **意义**：这正是独立测试集的价值——seed 模板永远不会触发的格式变体被提前发现；但仍只是合成 PDF，不能替代真实票据标注。
+
+## G-063｜账期资金占用的方向不能搞反
+- **问题现象**：第一版 financing 因子 `(1+r*days)/(1+r*30)` 让 60 天账期价格指数变高，与“账期越长、付款现值越低”相反。
+- **修复**：改为 `(1+r*30)/(1+r*days)`（基准账期现值 / 本供应商账期现值），测试断言 60 天指数 < 1。
+- **防回归**：`tests/test_scoring.py::test_payment_days_and_financing_adjustment`。

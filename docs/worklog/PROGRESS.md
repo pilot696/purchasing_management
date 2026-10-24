@@ -386,3 +386,11 @@
 - **GitNexus**：`detect-changes --scope all` 显示 29 files / 72 symbols / 72 processes，risk=critical（跨 M1/M2/M3/抽取/种子/API，已用 139 测试 + 4 套 e2e 验证）。
 - **验证**：后端 **139 个（132 passed / 7 skipped**：单测 101/3、集成 31/4）；前端 45 + typecheck/build（398.09KB / gzip 119.25KB）；SMOKE_M1/M2/M3/E2E=OK；横向比价 3 家报价返回。
 - **下一步 (Next)**：真实票据人工 gold、M2 专家 gold、embedding leg、生产鉴权/checkpointer/P95。
+
+### [2026-10-24 14:05] v1.19 评测可信度：独立文档测试集 + M2 第二实现差分 + 账期进评分
+- **独立文档测试集**：`app/evaluation/independent_docs.py`（独立 reportlab 版式：20 位发票号、全角金额、独立 PO/合同）+ `scripts/independent_extraction_eval.py`；手写 gold **40/40 字段（100%）、4/4 文档**；PDF 解析补 `￥` 金额变体；测试 `tests/test_independent_docs.py`。
+- **M2 第二实现**：`app/evaluation/m2_reference.py` 独立重写五维公式/verdict，`scripts/m2_reference_check.py` 500 组随机指标：**MAE 7e-08、verdict 不一致 0**；`tests/test_m2_reference.py` 200 组差分；明确不是人工 gold。
+- **账期进评分**：`app/scoring/payment.py` + `M2_FINANCING_ANNUAL_RATE/BASELINE_DAYS`；合同账期优先、报价回退，价格指数按现值折算；离线基线 mean_scored 79.50→**79.52**，真实基线 total_score 回填；`scripts/seed_quotes.py` 生成 360 报价、黑名单/冻结不参与推荐。
+- **验证**：后端 **149 个（142 passed / 7 skipped**：单测 111/3、集成 31/4）；SMOKE_M1/M2/M3/E2E=OK；横向比价 3 家返回；`evals/latest.json` 新增 extraction_independent / m2_reference。
+- **GitNexus**：本轮新增 evaluation/scoring/payment 模块，`detect-changes` 待提交前复跑。
+- **下一步 (Next)**：真实票据双人标注、M2 专家评分/κ、M3 合同阈值业务确认。
