@@ -1,7 +1,7 @@
 # 企业通用间接采购智能管理与风控系统 — PRD & Agent Spec
 
 > **Procurement AI Agent Workbench**｜全栈 + Multi-Agent 工程级需求与技术架构说明书
-> 版本：v1.16（真实模型全量评测：M2 23/30 真实复核 + 扫描件 VLM 24/24、成本/延迟回填）｜日期：2026-10-24｜目标岗位：AI 应用 / Agent 开发工程师
+> 版本：v1.17（上传抽取建档 + Idempotency-Key/限流 + M2 评分口径修正）｜日期：2026-10-24｜目标岗位：AI 应用 / Agent 开发工程师
 > 本文档是开发与 pen.dev 画布设计的**唯一事实来源**。任何实现偏离需在 §13 变更记录中登记。
 
 ---
@@ -1821,7 +1821,8 @@ PO: 10 台；GR: 仅到货合格 6 台；INV: 8 台
 
 - Base：`/api/v1`。JSON only（文件除外）。时间 ISO-8601 带时区。
 - 演示态身份：`X-Demo-Role: requester | buyer | finance | admin`（缺省 `buyer`）；服务端用它做**视图过滤与动作校验**，不是真认证。越权动作返回 `403 ROLE_FORBIDDEN`。
-- 幂等：`POST /runs`、`POST /runs/{id}/resume`、`POST /reviews/{id}/decision` 支持 `Idempotency-Key`（同 key 24h 内返回首次结果）。
+- 幂等：`POST /runs`、`POST /runs/{id}/resume`、`POST /reviews/{id}/decision` 支持 `Idempotency-Key`（同 key 24h 内返回首次结果）；v1.17 实现为**进程内 TTL 缓存（单副本）**，同 key 不同 body 返回 409 `IDEMPOTENCY_KEY_REUSED`；生产需换 Redis/DB 持久化。
+- 限流：演示级滑动窗口（默认 10 次/分钟/角色，`DEMO_RATE_LIMIT_RUNS` 可配），超限 429 `RATE_LIMITED`；生产需网关级限流。
 - 统一错误体：
   ```json
   {"error": {"code": "RUN_STATE_CONFLICT", "message": "run 当前状态为 running，不可提交复核", "details": {"status": "running"}}, "request_id": "req_01H..."}
@@ -1889,14 +1890,13 @@ queued ──► running ──► awaiting_review ──► running ──► s
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/documents` | multipart 上传 `{file, doc_type}` → `{doc_id, route, pages, text_ratio, template}` |
-| GET | `/documents/{id}` | 元数据 + 抽取摘要 |
-| GET | `/documents/{id}/file` | 原件流（`Content-Disposition: inline`，供 PDF.js） |
-| GET | `/documents/{id}/page/{page}.png?dpi=140` | 页面渲染（PDF.js 不可用时的降级） |
-| GET | `/documents/{id}/annotations?line_ref=` | bbox 注解（抽屉高亮用） |
-| GET | `/documents/{id}/file` | 原始 PDF（下载/浏览器阅读器） |
-| GET | `/documents/{id}/page.png?page=1` | 单页 PNG（PDF 抽屉高亮底图，v1.9） |
-| POST | `/documents/{id}/extract` | 同步抽取并落库（W1 已实现，返回 `{doc_id, record_id, summary, result}`）；W4 可升级为 202 + run |
+| POST | `/documents/upload` | 裸 PDF body（`Content-Type: application/pdf`）+ `doc_type`/`linked_no`；sha256 去重，≤20MB |
+| POST | `/documents/{id}/ingest` | 抽取并建档（当前发票）：Invoice + InvoiceLine + doc 关联；幂等/发票号冲突 409 |
+| GET | `/documents/{id}` | 元数据（doc_type/页数/文本层/抽取器） |
+| GET | `/documents/{id}/file` | 原始 PDF（浏览器阅读器/下载） |
+| GET | `/documents/{id}/page.png?page=1` | 单页 PNG（PDF 抽屉高亮底图） |
+| GET | `/documents/{id}/annotations` | bbox 注解（原生 PDF 抽屉高亮；VLM 暂无 bbox） |
+| POST | `/documents/{id}/extract` | 同步抽取并落库（返回 `{doc_id, record_id, summary, result}`） |
 
 **Master Data**
 
@@ -1905,7 +1905,8 @@ queued ──► running ──► awaiting_review ──► running ──► s
 | GET | `/categories` / `/categories/{code}/rules` | 品类模板与规则（规则库页） |
 | POST/PATCH | `/rules`、`/rules/{id}` | 规则维护（admin） |
 | GET | `/tolerances?category=` | 容差表 |
-| GET | `/suppliers?category=&status=` / `/suppliers/{id}` | 供应商列表/详情 |
+| GET | `/suppliers?q=&status=&limit=&offset=` / `/suppliers/{code}` | 供应商目录/详情 + 评估历史 |
+| GET | `/metrics/overview` | 运行/成本/缓存/待复核聚合（兼容别名，与 `/observability/summary` 同源） |
 | GET | `/skus/search?q=&category=` | SKU 检索（预检候选/演示） |
 | GET | `/benchmarks?bucket=&category=` | 价格基准（前端展示分布） |
 | GET | `/meta/enums` | 枚举字典（前后端共用） |
@@ -2542,6 +2543,7 @@ make eval SUITE=m3        # 单套件
 | 2026-10-23 | v1.14 | W4 演示闭环：`GET /runs`（历史/分页/待复核关联）、`GET /reviews` 收件箱（模块/verdict/summary）、`GET /runs/{id}/trace`（事件+llm_call）、`GET /rules`（规则+容差只读）、`GET /observability/{summary,evals}`；Run 中心/规则库/可观测页落地，业务页 `?run=` 深链；OpenCode Go 真实网关接入（session 头/dotenv 展开/usage 归因/JSON 容错）；`scripts/demo_runs.py` + `scripts/screenshots.py`（7 张截图）；`docs/RESUME_TEMPLATE.md` | W4 演示闭环实现 |
 | 2026-10-24 | v1.15 | W4 收尾：HITL `edits` 全链路（M1 勾选/改值、审计只记实际应用集合）；`GET /suppliers` 目录/详情/趋势 + `GET /reviews/{id}` + `/metrics/overview`；`POST /documents/upload`（sha256 去重/关联）；M3 多发票顺序核销（≤20 张、`invoices[]`/`multi_invoice`、finalize 聚合 qty_invoiced 与全部 invoice.status）；CI + requirements 锁定 + eval_report 聚合脚本 | W4 收尾实现 |
 | 2026-10-24 | v1.16 | 真实模型全量评测：M2 真实网关 30 家（23 ok / 7 闸门跳过 / 0 失败，522s，¥0.391；max_tokens 8192 + 截断检测修复）、扫描件 VLM 24/24 成功（12 合同 + 12 发票，发票 3 字段 100%，p50 35.7s，¥2.89）；`m2_eval --real-llm` / `extract_eval --vision` 配置化；`evals/latest.json` 增加 m2_real / extraction_vision | 真实评测回填 |
+| 2026-10-24 | v1.17 | 上传建档：`POST /documents/upload` + `POST /documents/{id}/ingest`（发票 Invoice+InvoiceLine、供应商匹配、幂等/409）；Idempotency-Key（`/runs`/`/resume`/`/decision`）与演示限流；M2 评分口径增加 `mean_scored`；M3 页面一键抽取建档；测试 128 个（121 passed / 7 skipped） | 上传闭环 + 防重 |
 
 ---
 

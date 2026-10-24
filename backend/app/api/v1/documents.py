@@ -14,10 +14,37 @@ from sqlalchemy import select
 
 from app.api.deps import SessionDep
 from app.core.errors import AppError
+from app.extraction.ingest import ingest_invoice
 from app.extraction.persist import persist_extraction, summarize
 from app.extraction.service import extract_document
 from app.models import tables as t
-from app.schemas.extraction import DocType, ExtractionResult
+from app.schemas.extraction import DocType, ExtractionResult, InvoiceExtract
+
+
+class ExtractionFailed(AppError):
+    status_code = 422
+    code = "EXTRACTION_FAILED"
+    default_message = "文档抽取失败，无法建档"
+
+
+def _vision_extractor_if_configured():  # noqa: ANN202 - 可选依赖，避免离线环境导入成本
+    """仅在配置了真实视觉端点且未强制 FakeLLM 时启用扫描件 VLM 建档。"""
+    from app.core.config import get_settings
+
+    if get_settings().force_fake_llm:
+        return None
+    try:
+        from app.extraction.vlm import LLMVisionExtractor
+        from app.llm.router import get_router
+
+        router = get_router()
+        role = router.config.role("vision")
+        provider = router.config.providers[role.provider]
+        if not provider.base_url or not provider.api_key:
+            return None
+        return LLMVisionExtractor(router, role="vision")
+    except Exception:  # noqa: BLE001 - 视觉未配置不应阻塞原生 PDF 建档
+        return None
 
 router = APIRouter(tags=["documents"])
 
@@ -210,6 +237,83 @@ async def upload_document(
     return {**_doc_meta(doc), "duplicate": False}
 
 
+@router.post("/documents/{doc_id}/ingest", status_code=201)
+async def ingest(
+    doc_id: UUID,
+    session: SessionDep,
+    invoice_no: str | None = Query(default=None, description="人工指定/覆盖发票号（可选）"),
+) -> dict[str, Any]:
+    """抽取并建档：当前支持发票（Invoice + InvoiceLine），供 M3 直接按发票号匹配。
+
+    - 幂等：doc 已关联发票则直接返回；发票号已存在则复用/409；
+    - 扫描件在配置了视觉端点时自动走 VLM；
+    - 建档成功后发票 id 写入 doc.linked_id，抽取记录写入 extraction_record。
+    """
+    doc = await _get_doc(session, doc_id)
+    if doc.doc_type != "invoice":
+        raise AppError("当前仅支持发票建档（invoice）", details={"doc_type": doc.doc_type})
+
+    if doc.linked_kind == "invoice" and doc.linked_id:
+        linked = await session.get(t.Invoice, doc.linked_id)
+        if linked is not None:
+            return {
+                **await ingest_invoice(
+                    session, doc=doc, payload=InvoiceExtract(invoice_no=linked.invoice_no)
+                ),
+                "doc_id": str(doc.id),
+                "extractor": doc.extractor_used,
+                "latency_ms": 0,
+                "summary": None,
+            }
+
+    pdf_bytes = _resolve_file(doc).read_bytes()
+    started = time.perf_counter()
+    result: ExtractionResult = await extract_document(
+        pdf_bytes,
+        "invoice",
+        _vision_extractor_if_configured(),
+    )
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    if result.extract is None:
+        raise ExtractionFailed(
+            "抽取未产出可建档字段，请检查 PDF 清晰度或抽取问题",
+            details={
+                "doc_id": str(doc.id),
+                "route": result.route.kind,
+                "issues": [issue.model_dump() for issue in result.issues],
+                "needs_review_fields": result.needs_review_fields,
+            },
+        )
+
+    payload = InvoiceExtract.model_validate(result.extract)
+    await persist_extraction(
+        session,
+        doc_id=doc.id,
+        result=result,
+        model=result.extractor,
+        latency_ms=latency_ms,
+    )
+    doc.page_count = result.route.page_count
+    doc.has_text_layer = result.route.has_text_layer
+    doc.text_ratio = result.route.text_ratio
+    doc.template_hit = result.route.template
+    doc.extractor_used = result.extractor
+
+    outcome = await ingest_invoice(
+        session,
+        doc=doc,
+        payload=payload,
+        invoice_no_override=invoice_no,
+    )
+    return {
+        **outcome,
+        "doc_id": str(doc.id),
+        "extractor": result.extractor,
+        "latency_ms": latency_ms,
+        "summary": summarize(result),
+    }
+
+
 def _doc_meta(doc: t.Doc) -> dict[str, Any]:
     return {
         "id": str(doc.id),
@@ -221,4 +325,3 @@ def _doc_meta(doc: t.Doc) -> dict[str, Any]:
         "extract_url": f"/api/v1/documents/{doc.id}/extract",
         "file_url": f"/api/v1/documents/{doc.id}/file",
     }
-

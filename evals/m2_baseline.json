@@ -31,8 +31,12 @@
   },
   "total_score": {
     "mean": 60.95,
-    "min": 0.0,
-    "max": 96.02
+    "mean_scored": 79.5,
+    "min_scored": 68.06,
+    "max_scored": 96.02,
+    "scored_n": 23,
+    "veto_n": 7,
+    "note": "mean_scored 排除闸门否决的 0 分；mean 为旧口径（含否决）"
   },
   "sensitivity": {
     "mean_flip_rate": 0.0599,
@@ -48,8 +52,125 @@
     "skipped_gate_hit": 7,
     "unavailable": 23
   },
-  "elapsed_ms": 396.46,
-  "generated_at": "2026-10-24T08:45:10",
+  "llm_failures": [
+    {
+      "supplier": "SUP-001",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-002",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-003",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-005",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-007",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-009",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-010",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-011",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-013",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-015",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-017",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-018",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-019",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-020",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-021",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-022",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-023",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-024",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-025",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-026",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-027",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-029",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    },
+    {
+      "supplier": "SUP-030",
+      "status": "unavailable",
+      "error": "RuntimeError: offline evaluation: LLM disabled"
+    }
+  ],
+  "elapsed_ms": 363.63,
+  "generated_at": "2026-10-24T10:52:13",
   "notes": [
     "离线基线：LLM 复核者标记 unavailable（不伪造正文），分数/闸门/敏感性均为确定性计算；",
     "数据工厂无 M2 专家标注 gold，本基线验证的是『规则契约』（注入异常是否 100% 检出、无误杀、冷启动正确降级）；",

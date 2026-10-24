@@ -13,7 +13,7 @@
 
 **已验证**（2026-10-24，seed=42；确定性基线离线，M2 另跑真实网关全量）：
 
-- 后端测试 **121 个（114 passed / 7 skipped**：单测 90/3、DB 集成 24/4）；前端单测 **45 passed**；`tsc` + `vite build` 通过（390.71KB / gzip 117.20KB）。
+- 后端测试 **128 个（121 passed / 7 skipped**：单测 92/3、DB 集成 29/4）；前端单测 **45 passed**；`tsc` + `vite build` 通过（391.96KB / gzip 117.51KB）。
 - 真实 e2e 冒烟全绿：`SMOKE_M1=OK`（needs_info + 补丁写回）、`SMOKE_M2=OK`（SUP-001 approve 94.43）、
   `SMOKE_M3=OK`（overall=hold + PDF 注释 + 财务放行）、`SMOKE_E2E=OK`（SSE/中断/恢复契约）。
 - **真实模型已接**：OpenCode Go（OpenAI 兼容）跑通 M2 LLM 复核闭环（deepseek-v4.1-flash，单次 tokens 1658→2662、
@@ -25,7 +25,10 @@
   发票号 / 价税合计 / 销方名称 **100%**（n=12）；延迟 p50 **35.7s** / p95 **49.3s**；
   24 份共 31 次调用（含 repair）**94,107 in / 36,486 out tokens、估算 ¥2.89**。
 - 基线：M3 行对齐 F1 **1.0** / 差异 F1 **1.0**（80 组）；M1 verdict **100%** / 检索 top-1 **100%**（120/105）；
-  M2 闸门检出 **100%** / 误报 **0%** / 冷启动一致 **100%**（30 家离线 + 23 家真实）；详见 [EVAL_REPORT.md](docs/EVAL_REPORT.md)。
+  M2 闸门检出 **100%** / 误报 **0%** / 冷启动一致 **100%**（30 家离线 + 23 家真实）；
+  M2 总分口径：**mean_scored 79.50**（23 家参与评分），旧口径 mean 60.95（含 7 家闸门否决 0 分）；详见 [EVAL_REPORT.md](docs/EVAL_REPORT.md)。
+- 上传建档：M3 上传 PDF 后可一键 `POST /documents/{id}/ingest` → 抽取并创建 Invoice + InvoiceLine（供应商匹配、金额/行归一化、sha256 去重、发票号冲突 409），随后按发票号进入 M3 匹配。
+- 幂等/限流：`POST /runs`、`/runs/{id}/resume`、`/reviews/{id}/decision` 支持 `Idempotency-Key`（进程内 24h TTL，单副本）；演示限流默认 10 次/分钟/角色。
 - 部署资产：多阶段 `Dockerfile`（Node 构建前端 → Python 运行时同端口托管 SPA + API）、`docker compose up -d --build`
   （见 [DEPLOYMENT.md](docs/DEPLOYMENT.md)）；生产形态（uvicorn 托管 `frontend/dist`）已本机验证：`/`、`/precheck` 深链、`/assets/*.js` 均 200。
 - 设计资产：pen.dev schema 2.14 的 `design/design.pen`（6 artboards）+ `design/tokens.json` + 静态 `preview.html`，
@@ -34,7 +37,8 @@
 
 **仍未测/待接入**（不写进数字）：向量检索 leg（dense 代码未实现，ADR-020）、M2 专家标注 gold（维度 MAE/κ）、
 M1/M3 真实模型基线（这两套本身确定性）、端到端 P95 压测；扫描件 VLM 已测（见上），但合同/PO 只有"成功抽取"、
-没有逐字段 gold，且 VLM 未输出 bbox（扫描件 PDF 暂无高亮）。全部记录在 [EVAL_REPORT.md §7](docs/EVAL_REPORT.md)。
+没有逐字段 gold，且 VLM 未输出 bbox（扫描件 PDF 暂无高亮）；幂等/限流为进程内实现（生产需 Redis/网关级）。
+全部记录在 [EVAL_REPORT.md §7](docs/EVAL_REPORT.md)。
 
 M3 抽取管线（W1 第 2~3 步）已完成：`DocumentRouter`（文本层占比 + 模板锚点分流）、`pdf_native`
 （表格结构优先、正则兜底，产出 Pydantic 模型 + 归一化 bbox）、确定性校验器（算术/税率/日期/数量）、
@@ -213,4 +217,3 @@ Makefile            CI/Linux 入口（up-app / seed-docker / eval / design 等�
 2. **证据可追溯**：每条 finding/risk 必须带 `evidence`，引用必须能在库中命中。
 3. **HITL 边界**：中断前只写"分析结果"，会计/业务事实只在 `finalize` 且用户决策后提交。
 4. **可观测**：每次 LLM 调用写 `llm_call`，每个节点写 `run_event`，UI 可回放。
-

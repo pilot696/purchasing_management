@@ -82,10 +82,10 @@ LLM 复核者叙述（schema 无分数，`evidence_refs` 后置校验）。**未
 
 | 项 | 结果 |
 |---|---|
-| 后端单测 | **90 passed / 3 skipped**（93 个） |
-| 后端集成测试（DB） | **24 passed / 4 skipped**（28 个） |
+| 后端单测 | **92 passed / 3 skipped**（95 个） |
+| 后端集成测试（DB） | **29 passed / 4 skipped**（33 个） |
 | 前端单测 | **45 passed** |
-| 前端构建 | **390.71 KB / gzip 117.20 KB** |
+| 前端构建 | **391.96 KB / gzip 117.51 KB** |
 | 真实 e2e 冒烟 | `SMOKE_M1=OK` / `SMOKE_M2=OK` / `SMOKE_M3=OK` / `SMOKE_E2E=OK`；M3 双发票 HTTP e2e 通过（两张 invoice.status=matched） |
 | 容器 | `docker compose up -d` 一键起（API 托管前端 dist，`/healthz` 探活） |
 
@@ -106,7 +106,7 @@ LLM 复核者叙述（schema 无分数，`evidence_refs` 后置校验）。**未
 | 敏感性 flip_rate | 5.99%（300×U(0.8,1.2)） |
 | 维度完整性 | 3.83/5（部分供应商缺 OTD/QC 数据） |
 
-> 口径说明：`total_score.mean=60.95` 含闸门否决的 0 分，不能当"平均质量分"；`llm_failures=[]` 但 23 家是 LLM 参与、
+> 口径说明：`total_score.mean=60.95` 含闸门否决的 0 分，不能当"平均质量分"；对外使用 **`mean_scored=79.50`（23 家参与评分）**；`llm_failures=[]` 但 23 家是 LLM 参与、
 > 7 家被闸门短路；M2 仍**没有专家 gold**，23 家真实复核只能证明"可调用、可解析、可引用校验、无整体降级"，
 > 不能证明风险判断准确率。
 

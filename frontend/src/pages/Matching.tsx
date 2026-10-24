@@ -8,11 +8,12 @@ import {
   getDemoRole,
   getDocumentAnnotations,
   getRunSnapshot,
+  ingestDocument,
   resumeRun,
   startRun,
   uploadDocument,
 } from "../lib/api";
-import type { DocumentAnnotation } from "../lib/api";
+import type { DocumentAnnotation, UploadedDoc } from "../lib/api";
 import { isTerminal } from "../lib/events";
 import {
   alignRows,
@@ -50,6 +51,8 @@ export default function Matching() {
   const [uploadDocType, setUploadDocType] = useState("invoice");
   const [uploadLinkedNo, setUploadLinkedNo] = useState("");
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [uploadedDoc, setUploadedDoc] = useState<UploadedDoc | null>(null);
+  const [ingestMessage, setIngestMessage] = useState<string | null>(null);
 
   const role = getDemoRole();
   const run = useRunStream(runId);
@@ -102,8 +105,27 @@ export default function Matching() {
           (doc.linked_kind ? ` · 已关联 ${doc.linked_kind}` : ""),
       );
       setUploadFile(null);
+      setUploadedDoc(doc);
+      setIngestMessage(null);
     },
     onError: (error) => setUploadMessage(`上传失败：${String(error)}`),
+  });
+
+  const ingest = useMutation({
+    mutationFn: () => {
+      if (!uploadedDoc) throw new Error("请先上传 PDF");
+      return ingestDocument(uploadedDoc.id, uploadLinkedNo.trim() || undefined);
+    },
+    onSuccess: (result) => {
+      setInvoiceNo(result.invoice.invoice_no);
+      setIngestMessage(
+        result.already_linked
+          ? `已建档：${result.invoice.invoice_no}（文档此前已关联）`
+          : `${result.created ? "建档成功" : "复用已有发票"}：${result.invoice.invoice_no} · ${result.lines} 行` +
+              (result.warnings.length ? `；${result.warnings.join("；")}` : ""),
+      );
+    },
+    onError: (error) => setIngestMessage(`建档失败：${String(error)}`),
   });
 
   const openDrawer = async (docId: string, title: string) => {    setDrawer({ docId, title });
@@ -147,7 +169,7 @@ export default function Matching() {
           <div>
             <h2 className="text-sm font-semibold">上传单据 PDF</h2>
             <p className="mt-1 text-[11px] text-[var(--text-muted)]">
-              裸二进制上传（sha256 去重），可选关联发票号/PO 号；上传后调用抽取接口入库。
+              裸二进制上传（sha256 去重），可选关联发票号/PO 号；发票上传后可直接抽取并建档，M3 按发票号匹配。
             </p>
           </div>
           <label className="flex flex-col gap-1 text-[12px] text-[var(--text-secondary)]">
@@ -189,6 +211,17 @@ export default function Matching() {
             {upload.isPending ? "上传中…" : "上传"}
           </button>
           {uploadMessage && <span className="text-[11px] text-[var(--text-secondary)]">{uploadMessage}</span>}
+          {uploadedDoc?.doc_type === "invoice" && (
+            <button
+              type="button"
+              disabled={ingest.isPending}
+              onClick={() => ingest.mutate()}
+              className="rounded-md border border-[var(--brand-primary)] px-3 py-2 text-[13px] font-medium text-[var(--brand-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {ingest.isPending ? "抽取建档中…" : "抽取并建档为发票"}
+            </button>
+          )}
+          {ingestMessage && <span className="text-[11px] text-[var(--text-secondary)]">{ingestMessage}</span>}
         </div>
       </section>
 

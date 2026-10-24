@@ -98,6 +98,8 @@ async def run(*, real_llm: bool = False, supplier_limit: int | None = None) -> d
     cold_start_ok = 0
     flip_rates: list[float] = []
     totals: list[float] = []
+    scored_totals: list[float] = []
+    veto_excluded = 0
     dimension_completeness: list[int] = []
     sensitivity_most: Counter[str] = Counter()
     llm_status: Counter[str] = Counter()
@@ -119,6 +121,11 @@ async def run(*, real_llm: bool = False, supplier_limit: int | None = None) -> d
             verdict_counts[report["verdict"]] += 1
             confidence_counts[report["confidence"]] += 1
             totals.append(float(report["total"]))
+            gate_veto = any(hit.get("veto") for hit in report.get("gate_hits", []))
+            if gate_veto:
+                veto_excluded += 1
+            else:
+                scored_totals.append(float(report["total"]))
             dimension_completeness.append(len(report["dimensions"]))
             status = report.get("llm_status") or "unavailable"
             llm_status[status] += 1
@@ -192,9 +199,14 @@ async def run(*, real_llm: bool = False, supplier_limit: int | None = None) -> d
             "expected": 5,
         },
         "total_score": {
+            # mean 保留旧口径（含闸门否决的 0 分），便于对比；对外用 mean_scored
             "mean": round(sum(totals) / len(totals), 2) if totals else 0,
-            "min": round(min(totals), 2) if totals else 0,
-            "max": round(max(totals), 2) if totals else 0,
+            "mean_scored": round(sum(scored_totals) / len(scored_totals), 2) if scored_totals else 0,
+            "min_scored": round(min(scored_totals), 2) if scored_totals else 0,
+            "max_scored": round(max(scored_totals), 2) if scored_totals else 0,
+            "scored_n": len(scored_totals),
+            "veto_n": veto_excluded,
+            "note": "mean_scored 排除闸门否决的 0 分；mean 为旧口径（含否决）",
         },
         "sensitivity": {
             "mean_flip_rate": round(sum(flip_rates) / len(flip_rates), 4) if flip_rates else 0,
@@ -245,4 +257,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

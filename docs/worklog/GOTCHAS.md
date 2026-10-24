@@ -443,3 +443,13 @@
 - **根因定位**：模型输出 `tax_rate: "13"`（百分比字符串），业务校验器期望小数 `0.13`；native 解析器内部已做换算，VLM 分支没有。
 - **修复手段**：`extraction/service.py` 增加 `_normalize_tax_rate`（13 / "13%" → 0.13，0.13 保持不变）并在 VLM payload 校验前归一化；提示词明确要求税率用小数；保存的 extract 用归一化后的 model_dump。
 - **防回归**：`test_vlm_extraction.py` 新增税率归一化/整 payload 单测；全量 24 份复测 24/24 ok、0 needs_review。
+
+## G-056｜上传建档必须重排发票行号，否则唯一约束 500
+- **问题现象**：设计 `POST /documents/{id}/ingest` 时直接用了抽取结果里的 `line_no`；VLM/模板可能返回重复或跳号行号，而 `invoice_line` 有 `(invoice_id, line_no)` 唯一约束，会触发 500。
+- **修复手段**：建档时按列表顺序重新编号 `1..n`，同时丢弃空 `item_desc` 行；税率仍走小数归一化、金额缺失时用行合计兜底。
+- **防回归**：`test_document_ingest.py` 覆盖建 Invoice+Line+doc 关联、发票号冲突 409、端点幂等返回；后续可用真实多行 PDF 补一轮集成测试。
+
+## G-057｜Idempotency-Key / 限流的单副本边界
+- **现状**：`IdempotencyStore` 与 `SlidingWindowLimiter` 都是**进程内**实现；重启即失效、多 uvicorn worker 不共享。
+- **为什么可接受**：当前 LangGraph `MemorySaver` 本身就是单进程，演示/单副本部署一致；Spec 已标注明生产需 Redis/DB + 网关级限流。
+- **风险**：如果直接 `uvicorn --workers N`，同 key 打到不同 worker 会各自执行一次；部署文档需保持单 worker，或先换持久化实现。

@@ -414,3 +414,36 @@ export async function uploadDocument(file: File, docType: string, linkedNo?: str
   if (!response.ok) throw await asError(response);
   return (await response.json()) as UploadedDoc;
 }
+
+export interface IngestInvoiceResult {
+  created: boolean;
+  already_linked: boolean;
+  invoice: {
+    id: string;
+    invoice_no: string;
+    invoice_code: string | null;
+    invoice_date: string | null;
+    amount_tax_excl: number;
+    tax_amount: number;
+    amount_tax_incl: number;
+    supplier_id: string | null;
+    doc_id: string | null;
+    status: string;
+  };
+  lines: number;
+  warnings: string[];
+  doc_id: string;
+  extractor: string | null;
+  latency_ms: number;
+  summary: unknown;
+}
+
+export async function ingestDocument(docId: string, invoiceNo?: string): Promise<IngestInvoiceResult> {
+  const query = invoiceNo ? `?invoice_no=${encodeURIComponent(invoiceNo)}` : "";
+  const response = await fetch(`/api/v1/documents/${encodeURIComponent(docId)}/ingest${query}`, {
+    method: "POST",
+    headers: { "X-Demo-Role": demoRole },
+  });
+  if (!response.ok) throw await asError(response);
+  return (await response.json()) as IngestInvoiceResult;
+}

@@ -371,3 +371,10 @@
 - **删除**：`__pycache__`/`.pyc`、`backend/.pytest_cache`、`backend/.cache`（prompt 缓存）、`frontend/tsconfig.tsbuildinfo`、`.idea`（IDE 会重建，已 gitignore）、`data/files/uploads`（14 份测试上传 PDF，并删 VM `doc` 表 14 条对应记录）、根级空 `pyproject.toml`、重复的 `docker-compose.linux.yml`（根 `docker-compose.yml` 已覆盖全量部署）。
 - **保留**：`.venv`/`node_modules`（运行依赖）、`frontend/dist`（API 静态托管运行时产物）、`data/files/m3-*` 与 `data/{seed,gold}`（seed/eval 依赖）、`.gitnexus`/`.claude`/`.github`（工具与 CI）、文档/截图/评测 JSON。
 - **验证**：`deploy.env.example` 引用已改为 docker-compose.yml；`docker compose{-f docker-compose.yml,-f docker-compose.db.yml} config` 均通过；后端测试 **121（114 passed / 7 skipped）**；应用 import OK；工作区仅保留本次删除/修改。
+
+### [2026-10-24 11:05] W4 收尾：上传抽取建档 + 幂等/限流 + M2 评分口径 + 截图刷新
+- **新增**：`backend/app/extraction/ingest.py`（发票 Invoice+InvoiceLine 建档、供应商匹配、幂等/409、行号重排、税率/金额归一化）、`POST /documents/{id}/ingest`；M3 页面“抽取并建档为发票”按钮；`app/core/idempotency.py`（进程内 24h TTL，同 key 不同 body 409）、`app/core/ratelimit.py`（10 次/分钟/角色滑动窗口，429）；`test_document_ingest.py` / `test_idempotency.py`。
+- **修正**：M2 `total_score` 增加 `mean_scored`（排除 7 家闸门 0 分，**79.50** / 23 家），旧口径 mean 60.95 保留对比；离线基线重跑 + 真实基线回填。
+- **文档**：Spec v1.17（endpoints/幂等/限流/changelog）、README/EVAL_REPORT/RESUME、latest.json 工程数字。
+- **验证**：后端 **128 个测试（121 passed / 7 skipped**：单测 92/3、集成 29/4）；前端 **45 passed** + typecheck；build **391.96KB / gzip 117.51KB**；7 张截图用最新 UI 重拍（M2 目录、M3 上传/多发票/建档入口）。
+- **下一步 (Next)**：embedding dense leg、M2 专家 gold、生产化鉴权/Postgres checkpointer/P95 压测。

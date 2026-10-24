@@ -7,11 +7,13 @@ import time
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Header, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import BusDep, RoleDep, RunServiceDep, require_module_role
 from app.core.config import get_settings
+from app.core.idempotency import idempotency_store
+from app.core.ratelimit import run_rate_limiter
 from app.schemas.catalog import ReviewDetail
 from app.schemas.runs import (
     ResumeRequest,
@@ -28,9 +30,22 @@ router = APIRouter(tags=["runs"])
 
 
 @router.post("/runs", response_model=StartRunResponse, status_code=202)
-async def start_run(body: StartRunRequest, service: RunServiceDep, role: RoleDep) -> StartRunResponse:
+async def start_run(
+    body: StartRunRequest,
+    service: RunServiceDep,
+    role: RoleDep,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> StartRunResponse:
     # P0：演示阶段任何角色都可发起；复核动作才做角色校验（§8.1）
+    payload = body.model_dump(mode="json")
+    if idempotency_key:
+        cached = idempotency_store.lookup("runs:start", idempotency_key, payload)
+        if cached is not None:
+            return StartRunResponse(**cached)
+    run_rate_limiter.check(f"runs:start:{role}", limit=get_settings().demo_rate_limit_runs)
     result = await service.start(body.module, body.subject)
+    if idempotency_key:
+        idempotency_store.remember("runs:start", idempotency_key, payload, result)
     return StartRunResponse(**result)
 
 
@@ -121,7 +136,14 @@ async def resume_run(
     body: ResumeRequest,
     service: RunServiceDep,
     role: RoleDep,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
+    scope = f"runs:{run_id}:resume"
+    payload = body.model_dump(mode="json")
+    if idempotency_key:
+        cached = idempotency_store.lookup(scope, idempotency_key, payload)
+        if cached is not None:
+            return cached
     snap = await service.snapshot(run_id)  # 404 + 取 module 做角色校验
     require_module_role(role, snap["run"].module)
     await service.resume(
@@ -131,7 +153,10 @@ async def resume_run(
         edits=body.edits,
         note=body.note,
     )
-    return {"run_id": str(run_id), "status": "running"}
+    response = {"run_id": str(run_id), "status": "running"}
+    if idempotency_key:
+        idempotency_store.remember(scope, idempotency_key, payload, response)
+    return response
 
 
 @router.post("/runs/{run_id}/cancel")
@@ -156,7 +181,14 @@ async def decide_review(
     body: ResumeRequest,
     service: RunServiceDep,
     role: RoleDep,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
+    scope = f"reviews:{review_id}:decision"
+    payload = body.model_dump(mode="json")
+    if idempotency_key:
+        cached = idempotency_store.lookup(scope, idempotency_key, payload)
+        if cached is not None:
+            return cached
     run_id, module = await service.review_context(review_id)
     require_module_role(role, module)
     await service.resume(
@@ -166,5 +198,7 @@ async def decide_review(
         edits=body.edits,
         note=body.note,
     )
-    return {"run_id": str(run_id), "status": "running"}
-
+    response = {"run_id": str(run_id), "status": "running"}
+    if idempotency_key:
+        idempotency_store.remember(scope, idempotency_key, payload, response)
+    return response
