@@ -366,3 +366,8 @@
 - **踩坑**：VLM 把税率写成 13 导致 `TAX_RATE_INVALID`（5/5 发票 needs_review）；加 `_normalize_tax_rate`（13/"13%"/0.13 统一 0.13）后复测 5/5 发票 ok，再跑全量通过。
 - **诚实边界**：合成扫描件；合同/PO 无逐字段 gold；VLM 输出无 bbox（扫描件 PDF 抽屉暂无高亮）；成本以百炼账单为准。
 - **下一步 (Next)**：embedding dense leg（可选）；M2 专家 gold 需人工标注。
+
+### [2026-10-24 10:45] 仓库清理：生成物 / 测试上传 / 重复配置
+- **删除**：`__pycache__`/`.pyc`、`backend/.pytest_cache`、`backend/.cache`（prompt 缓存）、`frontend/tsconfig.tsbuildinfo`、`.idea`（IDE 会重建，已 gitignore）、`data/files/uploads`（14 份测试上传 PDF，并删 VM `doc` 表 14 条对应记录）、根级空 `pyproject.toml`、重复的 `docker-compose.linux.yml`（根 `docker-compose.yml` 已覆盖全量部署）。
+- **保留**：`.venv`/`node_modules`（运行依赖）、`frontend/dist`（API 静态托管运行时产物）、`data/files/m3-*` 与 `data/{seed,gold}`（seed/eval 依赖）、`.gitnexus`/`.claude`/`.github`（工具与 CI）、文档/截图/评测 JSON。
+- **验证**：`deploy.env.example` 引用已改为 docker-compose.yml；`docker compose{-f docker-compose.yml,-f docker-compose.db.yml} config` 均通过；后端测试 **121（114 passed / 7 skipped）**；应用 import OK；工作区仅保留本次删除/修改。
